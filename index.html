@@ -332,6 +332,9 @@ function srcName(t){const c=t.acc&&conti()[t.acc];return c&&c.n?c.n:(t.s||"")}
 function flowOf(t){return Object.keys(FLOWS).find(k=>FLOWS[k]===t.s)||"cc"}
 function sources(){return [...new Set([...contoList().map(([,v])=>v.n),...S.all.map(srcName).filter(Boolean),CASH])]}
 function payers(){return S.settings.payers&&S.settings.payers.length?S.settings.payers:DEFAULTS.payers}
+// Conti cointestati: le spese restano a parte, senza dividerle tra le persone
+const JOINT = "Cointestato";
+function payerOpts(){return [...payers(),JOINT]}
 function devPayer(){try{const p=localStorage.getItem("sf-payer");return payers().includes(p)?p:payers()[0]}catch(e){return payers()[0]}}
 function setDevPayer(p){try{localStorage.setItem("sf-payer",p)}catch(e){}}
 function ddmm(d){return d.slice(8,10)+"/"+d.slice(5,7)}
@@ -559,9 +562,9 @@ async function handleFile(file){
     const flow=conti()[conto].t||"cc";
     const sig=sigOf(cols,flow);
     const saved=S.settings.formats&&S.settings.formats[sig];
-    if(conti()[conto].pb&&payers().includes(conti()[conto].pb)) payer=conti()[conto].pb;
-    if(!payer) for(const t of toks) if(acc[t]&&payers().includes(acc[t])){payer=acc[t];payerBy=t.startsWith("iban")?"Riconosciuto dall’IBAN nel file":"Riconosciuto dal numero di carta";break}
-    if(!payer&&saved&&saved.pb&&payers().includes(saved.pb)){payer=saved.pb;payerBy="Come l’ultimo file con questo formato"}
+    if(conti()[conto].pb&&payerOpts().includes(conti()[conto].pb)) payer=conti()[conto].pb;
+    if(!payer) for(const t of toks) if(acc[t]&&payerOpts().includes(acc[t])){payer=acc[t];payerBy=t.startsWith("iban")?"Riconosciuto dall’IBAN nel file":"Riconosciuto dal numero di carta";break}
+    if(!payer&&saved&&saved.pb&&payerOpts().includes(saved.pb)){payer=saved.pb;payerBy="Come l’ultimo file con questo formato"}
     if(!payer) payer=devPayer();
     S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,x1:saved.x1,x2:saved.x2,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
       invert:saved?!!saved.inv:false,person:members()[0],edits:{},rows:[],ai:null,remembered:!!saved,showMap:!saved&&(found.map.d<0)};
@@ -730,7 +733,7 @@ function vHome(){
   <div class="filters hf">
     <select id="hfp" aria-label="Beneficiario"><option value="">Tutti i beneficiari</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="hfc" aria-label="Categoria"><option value="">Tutte le categorie</option>${CATS.map(([id,n])=>`<option value="${id}" ${f.c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
-    <select id="hfpb" aria-label="Sostenute da"><option value="">Pagate da ${h(payers().join(" + "))}</option>${payers().map(m=>`<option value="${h(m)}" ${f.pb===m?"selected":""}>Pagate da ${h(m)}</option>`).join("")}</select>
+    <select id="hfpb" aria-label="Sostenute da"><option value="">Pagate da ${h(payers().join(" + "))}</option>${payerOpts().map(m=>`<option value="${h(m)}" ${f.pb===m?"selected":""}>${m===JOINT?"Pagate dai conti cointestati":"Pagate da "+h(m)}</option>`).join("")}</select>
   </div>
   <section class="hero">
     <div class="lbl">Speso ${h(perIn())}${filtered?" · con filtri":""}</div>
@@ -856,7 +859,7 @@ function vMovs(){
     <input type="search" id="fq" placeholder="Cerca esercente o descrizione" value="${h(f.q)}" aria-label="Cerca">
     <select id="fc" aria-label="Categoria"><option value="">Tutte le categorie</option>${CATS.map(([id,n])=>`<option value="${id}" ${f.c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
     <select id="fp" aria-label="Beneficiario"><option value="">Ogni beneficiario</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
-    <select id="fpb" aria-label="Sostenuta da"><option value="">Chiunque abbia pagato</option>${payers().map(m=>`<option ${f.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select>
+    <select id="fpb" aria-label="Sostenuta da"><option value="">Chiunque abbia pagato</option>${payerOpts().map(m=>`<option ${f.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="fs" aria-label="Mezzo"><option value="">Ogni mezzo</option>${sources().map(m=>`<option ${f.s===m?"selected":""}>${h(m)}</option>`).join("")}</select>
   </div>
   <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="msort" data-s="data" aria-pressed="${!byVal}">Per data</button><button data-act="msort" data-s="importo" aria-pressed="${byVal}">Per importo</button></div><span class="hint num" style="margin:0">${list.length} movimenti${q?" in tutti i mesi":""} · spese ${eur(spent)}</span></div>`;
@@ -928,7 +931,7 @@ function vImp(){
     <p class="hint">${I.remembered?"Formato riconosciuto: uso le colonne dell’ultima volta.":"Controlla le colonne: verranno ricordate per i prossimi file uguali."}</p>
     <div class="field"><label for="iacc">Conto o carta</label>${accSel("iacc",I.acc,false)}</div>
     <div class="two" style="margin-top:6px">
-      <div class="field"><label for="ipb">Sostenuta da</label><select id="ipb">${payers().map(m=>`<option ${I.payer===m?"selected":""}>${h(m)}</option>`).join("")}</select>${I.payerBy?`<p class="hint">${h(I.payerBy)}</p>`:""}</div>
+      <div class="field"><label for="ipb">Sostenuta da</label><select id="ipb">${payerOpts().map(m=>`<option ${I.payer===m?"selected":""}>${h(m)}</option>`).join("")}</select>${I.payerBy?`<p class="hint">${h(I.payerBy)}</p>`:""}</div>
       <div class="field"><label for="iper">Beneficiario predefinito</label><select id="iper">${members().map(m=>`<option ${I.person===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
     <button class="link" data-act="togglemap">${I.showMap?"Nascondi colonne":"Modifica colonne"}</button>
@@ -957,7 +960,7 @@ function vImp(){
 function contoForm(p){return `<div class="block" style="padding-bottom:12px"><h2>Nuovo conto</h2>
   <div class="field"><label for="${p}_n">Nome</label><input type="text" id="${p}_n" placeholder="Es. UniCredit conto, Widiba, BBVA risparmio"></div>
   <div class="two"><div class="field"><label for="${p}_t">Tipo</label><select id="${p}_t">${Object.entries(FLOWS).map(([k,n])=>`<option value="${k}">${h(n)}</option>`).join("")}</select></div>
-  <div class="field"><label for="${p}_pb">Intestatario</label><select id="${p}_pb">${payers().map(m=>`<option>${h(m)}</option>`).join("")}</select></div></div>
+  <div class="field"><label for="${p}_pb">Intestatario</label><select id="${p}_pb">${payerOpts().map(m=>`<option>${h(m)}</option>`).join("")}</select></div></div>
   <div class="btns" style="margin:4px 0 0"><button class="btn" data-act="addconto" data-p="${p}" ${S.canWrite?"":"disabled"}>Aggiungi conto</button></div></div>`}
 function pRow(r){
   const byTxt=r.gw&&r.k==="giroconto"?r.gw:r.cb==="Claude"?`Riconosciuto da Claude · ${Math.round((r.f||0)*100)}%`:r.cb==="regola"?"Regola salvata":r.cb==="dizionario"?"Riconosciuto dal nome":r.cb==="manuale"?"Scelto da te":r.k==="spesa"?"Da classificare":"";
@@ -990,7 +993,7 @@ async function openEdit(id){
     <div class="field"><label for="ec">Categoria</label><select id="ec">${CATS.map(([cid,n])=>`<option value="${cid}" ${(t.c||"altro")===cid?"selected":""}>${h(n)}</option>`).join("")}</select></div>
     <div class="two">
       <div class="field"><label for="ep">Beneficiario</label><select id="ep">${[...new Set([...members(),t.p].filter(Boolean))].map(m=>`<option ${t.p===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
-      <div class="field"><label for="epb">Sostenuta da</label><select id="epb">${[...new Set([...payers(),t.pb].filter(Boolean))].map(m=>`<option ${t.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
+      <div class="field"><label for="epb">Sostenuta da</label><select id="epb">${[...new Set([...payerOpts(),t.pb].filter(Boolean))].map(m=>`<option ${t.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
     <div class="field"><label for="es">Mezzo</label><select id="es">${contoList().map(([id,v])=>`<option value="${id}" ${t.acc===id?"selected":""}>${h(v.n)}</option>`).join("")}${[...new Set([FLOWS.cc,FLOWS.carta,FLOWS.ris,CASH,t.s].filter(Boolean))].map(m=>`<option value="${h(m)}" ${!conti()[t.acc]&&t.s===m?"selected":""}>${h(m)}${contoList().length&&m!==CASH?" (senza conto)":""}</option>`).join("")}</select></div>
     <div class="field"><label for="en">Nota</label><input type="text" id="en" value="${h(t.n||"")}"></div>
@@ -1027,7 +1030,7 @@ function openSettings(){
     <div class="field"><label for="spay">Chi sostiene le spese (uno per riga)</label><textarea id="spay" style="min-height:70px">${h(payers().join("\n"))}</textarea></div>
     <div class="btns"><button class="btn" data-act="savesettings" ${S.canWrite?"":"disabled"}>Salva impostazioni</button></div>
     <div class="field"><div class="lab">Conti e carte (${contoList().length})</div>
-      ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>`<div><span>${h(v.n)}<br><span class="hint">${h(FLOWS[v.t]||"")}${v.pb?" · "+h(v.pb):""}</span></span><button class="link" data-act="delconto" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:`<p class="hint">Nessun conto: aggiungi quelli da cui importi gli estratti.</p>`}
+      ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>`<div><span style="flex:1;min-width:0">${h(v.n)}<br><span class="hint">${h(FLOWS[v.t]||"")}</span></span><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}" style="width:auto;min-height:36px;padding:4px 8px">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select><button class="link" data-act="delconto" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:`<p class="hint">Nessun conto: aggiungi quelli da cui importi gli estratti.</p>`}
       ${legacy.length&&contoList().length?legacy.map(([src,n],i)=>{const ok=contoList().filter(([,v])=>FLOWS[v.t]===src);return `<p class="hint" style="margin-top:10px">${n} movimenti “${h(src)}” importati prima dei conti.${ok.length?" Assegnali a:":" Aggiungi un conto di questo tipo per assegnarli."}</p>${ok.length?`<div class="two"><select id="lg_${i}" aria-label="Conto per ${h(src)}">${ok.map(([k,v])=>`<option value="${k}">${h(v.n)}</option>`).join("")}</select><button class="btn ghost" data-act="assignleg" data-s="${h(src)}" data-i="${i}" ${S.canWrite?"":"disabled"}>Assegna</button></div>`:""}`}).join(""):""}
     </div>
     ${contoForm("sc")}
@@ -1216,7 +1219,7 @@ document.addEventListener("input",e=>{
   else if(id==="ca"&&S.cash) S.cash.a=e.target.value;
   else if(id==="cw"&&S.cash) S.cash.w=e.target.value;
 });
-document.addEventListener("change",e=>{
+document.addEventListener("change",async e=>{
   const t=e.target,id=t.id;
   if(id==="file"){handleFile(t.files[0]);t.value="";return}
   if(id==="fc"){S.f.c=t.value;t.blur();render();return}
@@ -1224,10 +1227,16 @@ document.addEventListener("change",e=>{
   if(id==="fs"){S.f.s=t.value;t.blur();render();return}
   if(id==="fpb"){S.f.pb=t.value;t.blur();render();return}
   if(id==="hfp"||id==="hfpb"||id==="hfc"){S.hf[id.slice(2)]=t.value;t.blur();render();return}
+  if(t.dataset.cpb){
+    const id2=t.dataset.cpb,c=conti()[id2];if(!c)return;const old=c.pb,nv=t.value,v={...c,pb:nv};
+    const upd=S.all.filter(x=>x.acc===id2&&x.pb===old).map(x=>({...x,pb:nv}));
+    try{await saveSettings({conti:{[id2]:v}});S.settings.conti={...conti(),[id2]:v};if(upd.length)await putTx(upd);toast(upd.length?`Intestatario aggiornato anche su ${upd.length} ${upd.length===1?"movimento":"movimenti"}`:"Intestatario aggiornato")}catch(err){toast(errMsg(err))}
+    return;
+  }
   if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
   if(id==="cd"&&S.cash){S.cash.d=t.value;return}
   const I=S.imp;if(!I) return;
-  if(id==="iacc"){const c=conti()[t.value];if(!c)return;I.acc=t.value;S.impAcc=t.value;I.flow=c.t||"cc";I.sig=sigOf(I.cols,I.flow);if(c.pb&&payers().includes(c.pb))I.payer=c.pb;I.payerBy="";I.edits={};buildRows();t.blur();render();return}
+  if(id==="iacc"){const c=conti()[t.value];if(!c)return;I.acc=t.value;S.impAcc=t.value;I.flow=c.t||"cc";I.sig=sigOf(I.cols,I.flow);if(c.pb&&payerOpts().includes(c.pb))I.payer=c.pb;I.payerBy="";I.edits={};buildRows();t.blur();render();return}
   if(id==="ipb"){I.payer=t.value;I.payerBy="";buildRows();t.blur();render();return}
   if(t.dataset.pp){const r=I.rows.find(x=>x.id===t.dataset.pp);if(r){I.edits[r.rk]=Object.assign(I.edits[r.rk]||{},{p:t.value})}buildRows();t.blur();render();return}
   if(id==="iper"){const old=I.person;I.person=t.value;for(const e2 of Object.values(I.edits)) if(e2.p===old) delete e2.p;buildRows();t.blur();render();return}
