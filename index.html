@@ -776,7 +776,9 @@ async function saveImport(){
   if(!rows.length){toast("Nessun movimento nuovo da salvare.");return}
   const now=Date.now();
   const list=rows.map((r,i)=>({...r,rk:undefined,dup:undefined,gw:undefined,c:r.k==="spesa"?(r.c||"altro"):null,by:S.uid||undefined,t:now+i}));
-  const learn={};
+  const learn={},known=S.settings.rules||{};
+  // esercenti riconosciuti da Claude con buona sicurezza: diventano regole, così non si pagano una seconda volta
+  for(const r of rows) if(r.cb==="Claude"&&(r.f||0)>=0.7&&r.c&&r.c!=="altro"){const k=mkey(r.m);if(k&&!known[k])learn[k]={c:r.c}}
   for(const [rk,e] of Object.entries(I.edits)) if(e.cb==="manuale"&&e.c){const r=I.rows.find(x=>x.rk===rk);if(r) learn[mkey(r.m)]={c:e.c}}
   const btn=$("#saveImp");if(btn)btn.disabled=true;
   try{
