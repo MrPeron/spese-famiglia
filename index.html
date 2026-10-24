@@ -35,6 +35,8 @@
   color-scheme: dark;
 }
 *,*::before,*::after{box-sizing:inherit}
+/* il contenuto di <details> in Chrome non eredita box-sizing dal genitore */
+details *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body);-webkit-font-smoothing:antialiased}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
@@ -175,6 +177,19 @@ textarea{min-height:110px;resize:vertical}
 @media (min-width:640px){.filters{grid-template-columns:repeat(4,1fr)}}
 
 /* Filtri riepilogo, budget, grafico */
+.seg.four{grid-template-columns:repeat(4,auto);max-width:100%}
+.seg.four button{padding:6px 10px}
+.grp{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:6px}
+.grp summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:11px 14px}
+.grp .gbody{padding:0 14px}
+.grp summary::-webkit-details-marker{display:none}
+.grp summary .m{font-weight:600;display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp summary .num{font-weight:700;text-align:right}
+.grp summary .hint{grid-column:1/-1}
+.grp[open] .gbody{padding-bottom:8px}
+.grp .tx{border-color:var(--line);background:var(--bg)}
+.grp .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.grp select{min-width:0}
 .seg.pages{display:grid;grid-template-columns:repeat(3,1fr);width:100%;margin-top:6px}
 .filters.hf{grid-template-columns:1fr 1fr;margin-top:12px}
 .filters.hf.two2 select:last-child{grid-column:auto}
@@ -259,7 +274,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "15 · 24/10/2026";
+const APP_VERSION = "16 · 24/10/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -718,7 +733,7 @@ function buildRows(){
     tx.dup=!!S.byId[id];
     out.push(tx);
   }
-  out.sort(I.sort==="data"?(x,y)=>y.d.localeCompare(x.d):(x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
+  out.sort(I.sort==="data"?(x,y)=>y.d.localeCompare(x.d):I.sort==="nome"?(x,y)=>String(x.m).localeCompare(String(y.m),"it")||y.d.localeCompare(x.d):(x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
   I.rows=out;
 }
 
@@ -1090,8 +1105,9 @@ function vMovs(){
   if(f.p) list=list.filter(t=>t.p===f.p);
   if(f.s) list=list.filter(t=>srcName(t)===f.s);
   if(f.pb) list=list.filter(t=>t.pb===f.pb);
-  const byVal=S.msort==="importo";
+  const ms=S.msort||"data",byVal=ms==="importo";
   if(byVal) list=[...list].sort((x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
+  if(ms==="nome") list=[...list].sort((x,y)=>String(x.m).localeCompare(String(y.m),"it")||y.d.localeCompare(x.d));
   const spent=-sum(list.filter(t=>t.k==="spesa"));
   let html=`${pageSeg()}<div class="filters">
     <input type="search" id="fq" placeholder="Cerca esercente o descrizione" value="${h(f.q)}" aria-label="Cerca">
@@ -1100,15 +1116,32 @@ function vMovs(){
     <select id="fpb" aria-label="Sostenuta da"><option value="">Chiunque abbia pagato</option>${payerOpts().map(m=>`<option ${f.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="fs" aria-label="Mezzo"><option value="">Ogni mezzo</option>${sources().map(m=>`<option ${f.s===m?"selected":""}>${h(m)}</option>`).join("")}</select>
   </div>
-  <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="msort" data-s="data" aria-pressed="${!byVal}">Per data</button><button data-act="msort" data-s="importo" aria-pressed="${byVal}">Per importo</button></div><span class="hint num" style="margin:0">${list.length} movimenti${q?" in tutti i mesi":""} · spese ${eur(spent)}</span></div>`;
+  <div class="toolbar"><div class="seg sm four" role="group" aria-label="Ordina per">${[["data","Data"],["importo","Importo"],["nome","Nome"],["esercente","Esercente"]].map(([k,n])=>`<button data-act="msort" data-s="${k}" aria-pressed="${ms===k}">${n}</button>`).join("")}</div><span class="hint num" style="margin:0">${list.length} movimenti${q?" in tutti i mesi":""} · spese ${eur(spent)}</span></div>`;
   if(!list.length) return html+`<p class="hint" style="margin-top:20px">Nessun movimento con questi filtri.${(f.c||f.p||f.s||f.q||f.pb)?` <button class="link" data-act="clearf">Togli i filtri</button>`:""}</p>`;
   let cur="";
-  if(byVal) return html+list.map(t=>txRow(t,true)).join("");
+  if(byVal||ms==="nome") return html+list.map(t=>txRow(t,true)).join("");
+  if(ms==="esercente") return html+vGroups(list);
   for(const t of list){
     if(t.d!==cur){cur=t.d;const [y,m,d]=t.d.split("-").map(Number);html+=`<div class="day">${h(new Date(y,m-1,d).toLocaleDateString("it-IT",{weekday:"short",day:"numeric",month:"long",year:q||S.per.from.slice(0,4)!==S.per.to.slice(0,4)?"numeric":undefined}))}</div>`}
     html+=txRow(t);
   }
   return html;
+}
+// Movimenti accorpati per esercente: categoria e beneficiario si scelgono una volta per tutto il gruppo
+function vGroups(list){
+  const g={};
+  for(const t of list){if(t.k!=="spesa")continue;const k=mkey(t.m)||norm(t.m)||"?";const o=g[k]=g[k]||{k,name:t.m,list:[],tot:0,cats:{},ps:{}};o.list.push(t);o.tot-=t.a;const c=t.c||"altro";o.cats[c]=(o.cats[c]||0)+1;o.ps[t.p||members()[0]]=(o.ps[t.p||members()[0]]||0)+1}
+  const arr=Object.values(g).sort((a,b)=>b.tot-a.tot);
+  if(!arr.length) return `<p class="hint" style="margin-top:20px">Nessuna spesa con questi filtri.</p>`;
+  return `<p class="hint">${arr.length} esercenti, dal più pesante. Categoria e beneficiario valgono per tutti i movimenti dell’esercente, anche quelli futuri.</p>`+arr.map(o=>{
+    const cs=Object.keys(o.cats),c=cs.length===1?cs[0]:"",ps=Object.keys(o.ps),p=ps.length===1?ps[0]:"";
+    return `<details class="grp"><summary><span class="m">${c?catDot(c):`<i class="dot" style="background:var(--line)"></i>`}${h(o.name)}</span><span class="num">${eur(o.tot)}</span><span class="hint" style="margin:0">${o.list.length} ${o.list.length===1?"movimento":"movimenti"} · ${c?h((CAT[c]||CAT.altro).n):"categorie diverse"}</span></summary>
+      <div class="gbody"><div class="two" style="margin:8px 0">
+        <select data-gc="${h(o.k)}" aria-label="Categoria per ${h(o.name)}" ${S.canWrite?"":"disabled"}>${c?"":`<option value="">Categorie diverse…</option>`}${CATS.map(([id,n])=>`<option value="${id}" ${c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
+        <select data-gp="${h(o.k)}" aria-label="Beneficiario per ${h(o.name)}" ${S.canWrite?"":"disabled"}>${p?"":`<option value="">Beneficiari diversi…</option>`}${members().map(m=>`<option ${p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
+      </div>
+      ${o.list.map(t=>txRow(t,true)).join("")}
+    </div></details>`}).join("");
 }
 // Spese in contanti ricorrenti (pulizie, baby sitter…): le più registrate negli ultimi 6 mesi, con l'ultimo importo
 function cashFreq(){
@@ -1194,7 +1227,7 @@ function vImp(){
     ${!mapOk?`<p class="banner">Indica almeno la colonna della data e quella dell’importo.</p>`:`
     <div class="stats"><span>${fresh.length} nuovi</span>${dups?`<span>${dups} già presenti</span>`:""}<span>${ruleN} classificati in automatico</span>${noCat?`<span style="background:var(--ochre-soft)">${noCat} da classificare</span>`:""}</div>
     ${I.ai?`<p class="progress">Riconosco i beneficiari… ${I.ai.done}/${I.ai.tot} esercenti${I.searches?", "+I.searches+" ricerche online":""}</p>`:""}
-    <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="isort" data-s="importo" aria-pressed="${I.sort!=="data"}">Per importo</button><button data-act="isort" data-s="data" aria-pressed="${I.sort==="data"}">Per data</button></div><span class="hint" style="margin:0">Totale spese ${eur(-sum(exp))}</span></div>
+    <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="isort" data-s="importo" aria-pressed="${I.sort!=="data"&&I.sort!=="nome"}">Per importo</button><button data-act="isort" data-s="data" aria-pressed="${I.sort==="data"}">Per data</button><button data-act="isort" data-s="nome" aria-pressed="${I.sort==="nome"}">Per nome</button></div><span class="hint" style="margin:0">Totale spese ${eur(-sum(exp))}</span></div>
     ${fresh.map(r=>pRow(r)).join("")}
     ${dups?`<details style="margin:10px 0"><summary class="hint">Mostra i ${dups} già presenti</summary>${I.rows.filter(r=>r.dup).map(r=>pRow(r)).join("")}</details>`:""}
     <div class="stick">
@@ -1549,6 +1582,14 @@ document.addEventListener("change",async e=>{
     const upd=S.all.filter(x=>x.acc===id2&&x.pb===old).map(x=>({...x,pb:nv}));
     try{await saveSettings({conti:{[id2]:v}});S.settings.conti={...conti(),[id2]:v};if(upd.length)await putTx(upd);toast(upd.length?`Intestatario aggiornato anche su ${upd.length} ${upd.length===1?"movimento":"movimenti"}`:"Intestatario aggiornato")}catch(err){toast(errMsg(err))}
     return;
+  }
+  if(t.dataset.gc||t.dataset.gp){
+    const key=t.dataset.gc||t.dataset.gp,field=t.dataset.gc?"c":"p",val=t.value;if(!val)return;
+    const list=S.all.filter(x=>x.k==="spesa"&&(mkey(x.m)||norm(x.m)||"?")===key&&x[field]!==val).map(x=>({...x,[field]:val,cb:"manuale",f:null}));
+    const rule={...((S.settings.rules||{})[key]||{})};rule[field]=val;if(!rule.c){const any=S.all.find(x=>x.k==="spesa"&&mkey(x.m)===key);rule.c=(field==="c"?val:(any&&any.c)||"altro")}
+    t.disabled=true;
+    try{if(list.length)await putTx(list);if(mkey(key)===key&&key!=="?")await saveSettings({rules:{[key]:rule}});toast(list.length?(list.length===1?"Aggiornato 1 movimento":`Aggiornati ${list.length} movimenti`):"Già tutti così")}catch(err){toast(errMsg(err))}
+    t.disabled=false;return;
   }
   if(id==="inclgiro"){S.inclGiro=t.checked;render();return}
   if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
