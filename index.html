@@ -1269,6 +1269,10 @@ function openSettings(){
       </div>`}).join("")}</div>`:`<p class="hint">Nessun conto: aggiungi quelli da cui importi gli estratti.</p>`}
       ${legacy.length&&contoList().length?legacy.map(([src,n],i)=>{const ok=contoList().filter(([,v])=>FLOWS[v.t]===src);return `<p class="hint" style="margin-top:10px">${n} movimenti “${h(src)}” importati prima dei conti.${ok.length?" Assegnali a:":" Aggiungi un conto di questo tipo per assegnarli."}</p>${ok.length?`<div class="two"><select id="lg_${i}" aria-label="Conto per ${h(src)}">${ok.map(([k,v])=>`<option value="${k}">${h(v.n)}</option>`).join("")}</select><button class="btn ghost" data-act="assignleg" data-s="${h(src)}" data-i="${i}" ${S.canWrite?"":"disabled"}>Assegna</button></div>`:""}`}).join(""):""}
     </div>
+    ${(()=>{const n=S.all.filter(t=>t.s!==CASH).length,c=S.all.length-n;return n?`<div class="field"><div class="lab">Ripartire da zero</div>
+      ${S.confirmClear==="__all"?`<div class="banner" style="margin:0">Eliminare tutti i ${n} movimenti importati, di qualsiasi conto? ${c?(c===1?"La spesa in contanti resta. ":"Le "+c+" spese in contanti restano. "):""}Conti, regole e categorie restano.
+        <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearall">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
+      :`<button class="link" data-act="askclear" data-k="__all" style="color:var(--danger)">Elimina tutti i movimenti importati (${n})</button><p class="hint">Anche quelli che non risultano collegati a nessun conto. Le spese in contanti restano.</p>`}</div>`:""})()}
     ${contoForm("sc")}
     <div class="field"><label for="sown">Altri conti vostri che non importate (uno per riga)</label><textarea id="sown" style="min-height:70px">${h((S.settings.own||[]).join("\n"))}</textarea>
       <p class="hint">I bonifici verso o da questi nomi sono giroconti, non spese o entrate. Gli intestatari dei conti importati (${h(contoList().map(([,v])=>v.holder).filter(Boolean).join(", ")||"nessuno ancora")}) li riconosco già.</p>
@@ -1415,6 +1419,10 @@ document.addEventListener("click",async e=>{
   }
   else if(act==="askclear"){S.confirmClear=el.dataset.k;openSettings()}
   else if(act==="noclear"){S.confirmClear=null;openSettings()}
+  else if(act==="clearall"){
+    const list=S.all.filter(t=>t.s!==CASH);el.disabled=true;
+    try{await delTxList(list);S.confirmClear=null;toast("Eliminati "+list.length+" movimenti");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
+  }
   else if(act==="clearconto"){
     const k=el.dataset.k,list=S.all.filter(t=>t.acc===k);el.disabled=true;
     try{await delTxList(list);S.confirmClear=null;toast("Eliminati "+list.length+" movimenti");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
