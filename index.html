@@ -259,7 +259,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "14 · 24/10/2026";
+const APP_VERSION = "15 · 24/10/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -362,6 +362,11 @@ function payerOpts(){return [...payers(),JOINT]}
 function devPayer(){try{const p=localStorage.getItem("sf-payer");return payers().includes(p)?p:payers()[0]}catch(e){return payers()[0]}}
 function setDevPayer(p){try{localStorage.setItem("sf-payer",p)}catch(e){}}
 function ddmm(d){return d.slice(8,10)+"/"+d.slice(5,7)}
+// Campo data sempre all'italiana (il campo data del browser segue la lingua del dispositivo, spesso MM/GG)
+function itDate(iso){return iso?iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4):""}
+function dateInput(id,iso,label){return `<input type="text" id="${id}" inputmode="numeric" autocomplete="off" placeholder="gg/mm/aaaa" value="${h(itDate(iso))}"${label?` aria-label="${h(label)}"`:""}>`}
+function readDate(id){const e=$("#"+id);if(!e)return null;const v=e.value.trim();return v?toISO(v.replace(/[.\-\s]/g,"/")):null}
+function shiftDay(iso,n){return new Date(Date.parse(iso)+n*86400000).toISOString().slice(0,10)}
 
 // Periodo: da un mese a un altro, estremi compresi
 function perMonths(){const out=[];for(let ym=S.per.from;ym<=S.per.to&&out.length<120;ym=shiftYM(ym,1))out.push(ym);return out}
@@ -612,7 +617,7 @@ function toISO(v){
   if(typeof v==="number"&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*86400000));return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0")+"-"+String(d.getUTCDate()).padStart(2,"0")}
   const s=String(v??"").trim();
   let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-  if(m){let y=+m[3];if(y<100)y+=2000;const mo=+m[2],d=+m[1];if(mo<1||mo>12||d<1||d>31)return null;return y+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0")}
+  if(m){let y=+m[3];if(y<100)y+=2000;const mo=+m[2],d=+m[1];if(mo<1||mo>12||d<1||d>new Date(Date.UTC(y,mo,0)).getUTCDate())return null;return y+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0")}
   m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+"-"+m[2]+"-"+m[3];
   return null;
 }
@@ -1133,7 +1138,7 @@ function vCash(){
     <p class="hint">I prelievi arrivano già con l’importazione dei movimenti del conto corrente. Registrali qui solo per i contanti che non passano dalla banca o se non importi l’estratto.</p>
     <div class="field"><div class="lab">Prelevati da</div><div class="chips">${payers().map(m=>`<button class="chip" data-act="cpb" data-p="${h(m)}" aria-pressed="${C.pb===m}">${h(m)}</button>`).join("")}</div></div>
     `}
-    <div class="field"><label for="cd">Data</label><input type="date" id="cd" value="${h(C.d)}"></div>
+    <div class="field"><label for="cd">Data</label><div class="two">${dateInput("cd",C.d)}<div class="chips"><button class="chip" data-act="cday" data-n="0" aria-pressed="${C.d===today()}">Oggi</button><button class="chip" data-act="cday" data-n="-1" aria-pressed="${C.d===shiftDay(today(),-1)}">Ieri</button></div></div></div>
     <div class="btns"><button class="btn" data-act="savecash" style="flex:1" ${S.canWrite?"":"disabled"}>${C.k==="spesa"?"Registra spesa":"Registra prelievo"}</button></div>
   </section>
   <section class="block"><h2>Contanti ${h(perIn())}</h2>
@@ -1229,7 +1234,7 @@ async function openEdit(id){
     <div class="field"><label for="em">Esercente</label><input type="text" id="em" value="${h(t.m||"")}"></div>
     <div class="two">
       <div class="field"><label for="ea">Importo €</label><input type="text" inputmode="decimal" id="ea" value="${h(String(Math.abs(t.a)).replace(".",","))}"></div>
-      <div class="field"><label for="ed">Data</label><input type="date" id="ed" value="${h(t.d)}"></div>
+      <div class="field"><label for="ed">Data</label>${dateInput("ed",t.d)}</div>
     </div>
     <div class="field"><label for="ek">Tipo</label><select id="ek">${Object.entries(KINDS).map(([kk,n])=>`<option value="${kk}" ${k===kk?"selected":""}>${h(n)}</option>`).join("")}</select></div>
     <div class="field"><label for="ec">Categoria</label><select id="ec">${CATS.map(([cid,n])=>`<option value="${cid}" ${(t.c||"altro")===cid?"selected":""}>${h(n)}</option>`).join("")}</select></div>
@@ -1247,7 +1252,8 @@ async function saveEdit(){
   const t=S.byId[S.sheet.id];if(!t) return;
   const a=num($("#ea").value);if(isNaN(a)||a===0){toast("Inserisci un importo valido.");return}
   const k=$("#ek").value;
-  const nt={...t,m:$("#em").value.trim()||t.m,d:$("#ed").value||t.d,k,c:k==="spesa"?$("#ec").value:null,p:$("#ep").value,pb:$("#epb").value,...(conti()[$("#es").value]?{acc:$("#es").value,s:FLOWS[conti()[$("#es").value].t]||FLOWS.cc}:{acc:"",s:$("#es").value}),n:$("#en").value.trim(),cb:"manuale",f:null};
+  const nd=readDate("ed");if($("#ed").value.trim()&&!nd){toast("Data non valida: scrivila come gg/mm/aaaa.");$("#ed").focus();return}
+  const nt={...t,m:$("#em").value.trim()||t.m,d:nd||t.d,k,c:k==="spesa"?$("#ec").value:null,p:$("#ep").value,pb:$("#epb").value,...(conti()[$("#es").value]?{acc:$("#es").value,s:FLOWS[conti()[$("#es").value].t]||FLOWS.cc}:{acc:"",s:$("#es").value}),n:$("#en").value.trim(),cb:"manuale",f:null};
   nt.a=(k==="entrata")?Math.abs(a):(t.a>0&&k==="spesa"?Math.abs(a):-Math.abs(a));
   try{
     if(ymOf(nt.d)!==ymOf(t.d)) await delTx(t);
@@ -1277,7 +1283,7 @@ function openSettings(){
         <div class="two" style="flex-basis:100%"><select data-ct="${h(k)}" aria-label="Tipo di ${h(v.n)}">${Object.entries(FLOWS).map(([f,fn])=>`<option value="${f}" ${v.t===f?"selected":""}>${h(fn)}</option>`).join("")}</select><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
         ${v.t!=="carta"?`<details class="bald" style="flex-basis:100%"><summary class="link">${v.bal?`Saldo ${eur(v.bal.v)} al ${ddmm(v.bal.d)} (${v.bal.src==="banca"?"dalla banca":"inserito a mano"})`:"Imposta il saldo"}</summary>
           <p class="hint">Un saldo a una data qualsiasi, anche di oggi: gli altri giorni li calcolo dai movimenti. Vincolato e linea libera servono solo per Widiba; lascia vuoto se non servono.</p>
-          ${[["bal","Saldo del conto"],["vinc","Vincolato"],["lib","Linea libera (non calcolata, solo da mostrare)"]].map(([f,lab])=>`<div class="lab" style="font-size:.85rem;margin-top:8px">${lab}</div><div class="two"><input type="date" id="${f}_d_${h(k)}" aria-label="${lab}: data" value="${h((v[f]&&v[f].d)||today())}"><input type="text" inputmode="decimal" id="${f}_v_${h(k)}" aria-label="${lab}: importo" placeholder="€" value="${v[f]?h(String(v[f].v).replace(".",",")):""}"></div>`).join("")}
+          ${[["bal","Saldo del conto"],["vinc","Vincolato"],["lib","Linea libera (non calcolata, solo da mostrare)"]].map(([f,lab])=>`<div class="lab" style="font-size:.85rem;margin-top:8px">${lab}</div><div class="two">${dateInput(f+"_d_"+k,(v[f]&&v[f].d)||today(),lab+": data")}<input type="text" inputmode="decimal" id="${f}_v_${h(k)}" aria-label="${lab}: importo" placeholder="€" value="${v[f]?h(String(v[f].v).replace(".",",")):""}"></div>`).join("")}
           <div class="btns" style="margin:10px 0 0"><button class="btn ghost" data-act="savebal" data-k="${h(k)}" ${S.canWrite?"":"disabled"}>Salva saldi</button></div></details>`:""}
         ${S.confirmClear===k?`<div class="banner" style="flex-basis:100%;margin:0">Eliminare tutti i ${n} movimenti importati da ${h(v.n)}? Il conto resta: poi puoi reimportare gli estratti.
           <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearconto" data-k="${h(k)}">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
@@ -1396,8 +1402,9 @@ document.addEventListener("click",async e=>{
       const de=$("#"+f+"_d_"+k),ve=$("#"+f+"_v_"+k);if(!de||!ve)continue;
       const n=num(ve.value);
       if(ve.value.trim()===""){if(f!=="bal")delete v[f];continue}
-      if(isNaN(n)||!de.value){toast(lab+": inserisci data e importo.");return}
-      v[f]={d:de.value,v:Math.round(n*100)/100,src:"manuale"};
+      const dd=readDate(f+"_d_"+k);
+      if(isNaN(n)||!dd){toast(lab+": inserisci data (gg/mm/aaaa) e importo.");return}
+      v[f]={d:dd,v:Math.round(n*100)/100,src:"manuale"};
     }
     try{await saveSettings({conti:{[k]:{...v,vinc:v.vinc||null,lib:v.lib||null}}});S.settings.conti={...conti(),[k]:v};toast("Saldi salvati");openSettings()}catch(err){toast(errMsg(err))}
   }
@@ -1422,6 +1429,7 @@ document.addEventListener("click",async e=>{
   else if(act==="edit") openEdit(el.dataset.id);
   else if(act==="saveedit") saveEdit();
   else if(act==="deltx"){const t=S.byId[S.sheet&&S.sheet.id];if(t&&confirm("Eliminare questo movimento?")){try{await delTx(t);closeSheet();toast("Movimento eliminato")}catch(err){toast(errMsg(err))}}}
+  else if(act==="cday"){S.cash.d=shiftDay(today(),Number(el.dataset.n));render()}
   else if(act==="cfreq"){const t=S.byId[el.dataset.id];if(t){Object.assign(S.cash,{k:"spesa",a:String(-t.a).replace(".",","),w:t.m,c:t.c||"altro",p:t.p||members()[0],pb:t.pb||S.cash.pb});render();const a=$("#ca");if(a){a.focus();a.select()}}}
   else if(act==="ck"){S.cash.k=el.dataset.k;render()}
   else if(act==="cc"){S.cash.c=el.dataset.c;render()}
@@ -1477,7 +1485,7 @@ document.addEventListener("click",async e=>{
   }
   else if(act==="delcat"){const id=el.dataset.k;try{await saveSettings({cats:{[id]:null}});const c={...(S.settings.cats||{})};delete c[id];S.settings.cats=c;rebuildCats();openSettings()}catch(err){toast(errMsg(err))}}
   else if(act==="savecash"){
-    const C=S.cash;C.a=$("#ca").value;if($("#cw"))C.w=$("#cw").value;C.d=$("#cd").value||today();
+    const C=S.cash;C.a=$("#ca").value;if($("#cw"))C.w=$("#cw").value;const cdv=readDate("cd");if($("#cd").value.trim()&&!cdv){toast("Data non valida: scrivila come gg/mm/aaaa.");$("#cd").focus();return}C.d=cdv||today();
     const a=num(C.a);
     if(isNaN(a)||a<=0){toast("Inserisci l’importo.");$("#ca").focus();return}
     if(C.k==="spesa"&&!C.c){toast("Scegli una categoria.");return}
@@ -1544,7 +1552,7 @@ document.addEventListener("change",async e=>{
   }
   if(id==="inclgiro"){S.inclGiro=t.checked;render();return}
   if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
-  if(id==="cd"&&S.cash){S.cash.d=t.value;return}
+  if(id==="cd"&&S.cash){const d=readDate("cd");if(d)S.cash.d=d;return}
   const I=S.imp;if(!I) return;
   if(id==="iacc"){const c=conti()[t.value];if(!c)return;I.acc=t.value;S.impAcc=t.value;I.flow=c.t||"cc";I.sig=sigOf(I.cols,I.flow);if(c.pb&&payerOpts().includes(c.pb))I.payer=c.pb;I.payerBy="";I.edits={};buildRows();t.blur();render();return}
   if(id==="ipb"){I.payer=t.value;I.payerBy="";buildRows();t.blur();render();return}
