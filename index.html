@@ -274,7 +274,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "16 · 24/10/2026";
+const APP_VERSION = "17 · 24/10/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -354,9 +354,10 @@ function ymOf(d){return d.slice(0,7)}
 function shiftYM(ym,n){let [y,m]=ym.split("-").map(Number);m+=n;while(m<1){m+=12;y--}while(m>12){m-=12;y++}return y+"-"+String(m).padStart(2,"0")}
 function ymLabel(ym){const [y,m]=ym.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"})}
 function monthName(ym){const [y,m]=ym.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("it-IT",{month:"long"})}
-const EUR = new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR"});
-function eur(n){return EUR.format(n||0)}
-function eurSplit(n){const s=new Intl.NumberFormat("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);const i=s.lastIndexOf(",");return [s.slice(0,i),s.slice(i)]}
+// Importi all'italiana sempre con il punto delle migliaia (Intl lo omette tra 1.000 e 9.999)
+function fmtNum(n){const v=Math.round((Number(n)||0)*100)/100,[i,d]=Math.abs(v).toFixed(2).split(".");return (v<0?"-":"")+i.replace(/\B(?=(\d{3})+(?!\d))/g,".")+","+d}
+function eur(n){return fmtNum(n)+"\u00a0€"}
+function eurSplit(n){const s=fmtNum(n);const i=s.lastIndexOf(",");return [s.slice(0,i),s.slice(i)]}
 function norm(s){return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim()}
 function hash(s){let h1=0x811c9dc5,h2=0x1b873593;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,16777619);h2=Math.imul(h2^c,2654435761)}return (h1>>>0).toString(36)+(h2>>>0).toString(36)}
 function uid(){return "c"+Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -1062,6 +1063,8 @@ function vCardCheck(){
     const cardAccs=myCards;
     const cards=list.map(t=>{const l4=cardLast4(t),E=stmtOf(t);let acc=cardContoOf(l4);
       if(!acc) acc=cardAccs.find(k=>Math.abs(cardSpent(E,cut,k)+t.a)<=1)||null;
+      // importi diversi: la carta della stessa persona intestataria del conto addebitato, se è una sola
+      if(!acc){const pb=(conti()[t.acc]||{}).pb,same=cardAccs.filter(k=>conti()[k].pb===pb);if(same.length===1)acc=same[0]}
       return {t,l4,acc,sp:acc?cardSpent(E,cut,acc):null}});
     return {E,list,cards,from,to,ch:-sum(list),sp:spentE(E)};
   }).filter(r=>r.ch>0.004||r.sp>0.004);
@@ -1081,6 +1084,9 @@ function vCardCheck(){
         <span>${h(monthName(r.E))} · ${miss?"—":eur(r.ch)}</span><span>${eur(r.sp)}</span><span class="${ok?"ok":"ko"}">${ok?"Torna":miss?"Addebito non trovato":(d>0?"+":"−")+eur(Math.abs(d))}</span></summary>
         <div class="hint">Estratto di ${h(ymLabel(r.E))}: spese carta dal ${ddmm(nextDay(r.from))} al ${ddmm(r.to)}, al netto dei rimborsi. Sotto, gli addebiti sul conto per questo estratto.</div>
         ${r.list.length?r.cards.map(({t,l4,acc,sp})=>{const dd=sp==null?null:-t.a-sp;return `<button class="tx" data-act="edit" data-id="${h(t.id)}"><span class="m">${l4?"Carta …"+h(l4)+(acc?" · "+h(conti()[acc].n):""):h(t.m||t.x)}</span><span class="a num">−${eur(-t.a)}</span><span class="meta"><span>${h(srcName(t))}</span><span class="num">${ddmm(t.d)}</span>${sp!=null?`<span>spese della carta ${eur(sp)}</span><span class="${Math.abs(dd)<=1?"":"flag"}">${Math.abs(dd)<=1?"torna":(dd>0?"+":"−")+eur(Math.abs(dd))}</span>`:l4?`<span>importa l’estratto di questa carta per il confronto separato</span>`:""}</span></button>`}).join(""):`<div class="hint">Nessun addebito trovato per l’estratto di ${h(monthName(r.E))}. Se l’addebito non è ancora arrivato è normale; altrimenti aprilo da Movimenti e controlla la descrizione.</div>`}
+        ${(()=>{const ex=S.all.filter(t=>t.s===FLOWS.carta&&t.k!=="spesa"&&t.k!=="prelievo"&&t.d>r.from&&t.d<=r.to&&(!A||A.has(t.acc)));
+          return (ex.length?`<div class="hint" style="margin-top:10px"><b>Movimenti della carta non contati</b> perché non sono segnati come spesa: se sono spese, aprili e cambia il tipo.</div>${ex.map(t=>txRow(t,true)).join("")}`:"")+
+          `<div class="btns" style="margin:10px 0 4px">${myCards.map(k=>`<button class="btn ghost" data-act="cardmovs" data-acc="${h(k)}" data-e="${r.E}" style="padding:8px 12px">Vedi le spese di ${h(conti()[k].n)}</button>`).join("")}</div>`})()}
       </details>`}).join("")}
     <p class="hint" style="padding-bottom:10px">${hasCard?`Ogni riga è un estratto della carta. Toccala per vedere gli addebiti contati, carta per carta. L’estratto carta chiude ${cut?cut+(cut===1?" giorno":" giorni")+" prima della fine del mese":"l’ultimo giorno del mese"}${cut===2?"":" (stimato dai vostri dati)"}. L’addebito sul conto non conta come spesa: contano le singole spese della carta.`:"Importa anche l’estratto della carta per confrontarlo con l’addebito sul conto."}</p>`:""}
   </section>`;
@@ -1427,6 +1433,7 @@ document.addEventListener("click",async e=>{
   if(act==="prevm"){shiftPer(-1);render()}
   else if(act==="nextm"){shiftPer(1);render()}
   else if(act==="period") openPeriod();
+  else if(act==="cardmovs"){const c=conti()[el.dataset.acc];if(!c)return;S.per={from:el.dataset.e,to:el.dataset.e};S.f={q:"",c:"",p:"",s:c.n,pb:""};S.msort="importo";S.view="movs";render();window.scrollTo(0,0)}
   else if(act==="reload"){location.reload()}
   else if(act==="page"){S.page=el.dataset.p;try{localStorage.setItem("sf-page",S.page)}catch(_){}S.hf.pb="";render()}
   else if(act==="savebal"){
