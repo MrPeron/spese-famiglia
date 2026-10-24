@@ -201,10 +201,16 @@ textarea{min-height:110px;resize:vertical}
 .ctip b{display:block;font-size:.88rem;text-transform:capitalize;margin-bottom:2px}
 .ctip div{display:flex;justify-content:space-between;gap:10px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--muted);padding:10px 0 12px}
-.recon{display:grid;grid-template-columns:1fr auto auto;gap:4px 14px;font-size:.88rem;padding:4px 0 10px;align-items:baseline}
+.recon{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:4px 12px;font-size:.88rem;padding:4px 0;align-items:baseline}
+.recon>span:not(:first-child){text-align:right}
 .recon .h{color:var(--muted);font-size:.78rem}
 .recon .ok{color:var(--ok);font-weight:600}
 .recon .ko{color:var(--ochre);font-weight:600}
+.rrow{border-top:1px solid var(--line)}
+.rrow summary{list-style:none;cursor:pointer;padding:8px 0}
+.rrow summary::-webkit-details-marker{display:none}
+.rrow[open]{padding-bottom:8px}
+.rrow .tx{margin-top:6px}
 .bud label{display:grid;grid-template-columns:12px 1fr 110px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
 .bud label:first-child{border-top:0}
 .bud small{display:block;color:var(--muted);font-size:.78rem}
@@ -369,12 +375,31 @@ function monthBudget(){const B=budgets();return Object.entries(B).filter(([c,v])
 
 // Addebito della carta di credito sul conto: deve corrispondere al dettaglio dell'estratto carta
 function dayDiff(a,b){return Math.abs(Date.parse(a)-Date.parse(b))/86400000}
-function cardNet(ym){return -sum(S.all.filter(t=>t.s===FLOWS.carta&&ymOf(t.d)===ym&&(t.k==="spesa"||t.k==="prelievo")))}
+// Ciclo dell'estratto carta: chiude "cut" giorni prima della fine del mese; l'addebito arriva sul conto il mese dopo
+const RE_CARDCHG = /(cart[ae]\s(di\s)?credito|carta credito|saldo carta|estratto conto carta|e\/c carta|addebito e\/c|nexi|cartasi|american express|amex|flexia)/i;
+function lastDay(ym){const [y,m]=ym.split("-").map(Number);return new Date(Date.UTC(y,m,0)).getUTCDate()}
+function cycleEnd(ym,cut){return ym+"-"+String(lastDay(ym)-cut).padStart(2,"0")}
+function nextDay(d){return new Date(Date.parse(d)+86400000).toISOString().slice(0,10)}
+function cardTx(){return S.all.filter(t=>t.s===FLOWS.carta&&(t.k==="spesa"||t.k==="prelievo"))}
+function cardRange(chargeYm,cut){return [cycleEnd(shiftYM(chargeYm,-2),cut),cycleEnd(shiftYM(chargeYm,-1),cut)]}
+function cardSpent(chargeYm,cut){const [from,to]=cardRange(chargeYm,cut);return -sum(cardTx().filter(t=>t.d>from&&t.d<=to))}
+function ccOut(ym){return S.all.filter(t=>t.s===FLOWS.cc&&t.a<0&&(t.k==="giroconto"||t.k==="spesa")&&(!ym||ymOf(t.d)===ym))}
+function isCardText(t){return RE_CARDCHG.test(norm((t.x||"")+" "+(t.m||"")))}
+// Stima di quanti giorni prima di fine mese chiude l'estratto (0-5), dai mesi con un addebito carta riconoscibile
+function cardCut(){
+  const key=S.ver;if(cardCut.k===key) return cardCut.v;
+  const byM={};for(const t of ccOut()) if(isCardText(t)) byM[ymOf(t.d)]=(byM[ymOf(t.d)]||0)-t.a;
+  const ms=Object.keys(byM);let best=2,err=Infinity;
+  if(ms.length&&cardTx().length) for(const c of [2,0,1,3,4,5]){const e=ms.reduce((s2,ym)=>s2+Math.abs(byM[ym]-cardSpent(ym,c)),0);if(e<err-0.5){err=e;best=c}}
+  cardCut.k=key;cardCut.v=best;return best;
+}
+// Addebiti carta di un mese: per descrizione, oppure giroconto/spesa con lo stesso importo delle spese carta del ciclo
+function cardCharges(ym){const sp=cardSpent(ym,cardCut());return ccOut(ym).filter(t=>isCardText(t)||(sp>1&&Math.abs(-t.a-sp)<=1))}
 function cardCharge(d,a){
   const amt=Math.abs(a);
   for(const t of S.all) if(t.s===FLOWS.carta&&t.k==="giroconto"&&Math.abs(Math.abs(t.a)-amt)<0.01&&dayDiff(t.d,d)<=45) return "stesso importo del pagamento saldo nell’estratto carta";
-  const pm=shiftYM(ymOf(d),-1),net=cardNet(pm);
-  if(net>1&&Math.abs(net-amt)<=0.5) return "pari alle spese con la carta di "+monthName(pm);
+  const ym=ymOf(d),net=cardSpent(ym,cardCut()),[from,to]=cardRange(ym,cardCut());
+  if(net>1&&Math.abs(net-amt)<=1) return "pari alle spese con la carta dal "+ddmm(nextDay(from))+" al "+ddmm(to);
   return null;
 }
 // Bonifico tra i vostri conti: stesso importo uscito da un conto ed entrato in un altro entro 4 giorni
@@ -438,6 +463,7 @@ function rebuild(){
     for(const [id,t] of Object.entries(tx)) if(t&&t.d) out.push({...t,id});
   }
   out.sort((a,b)=>b.d.localeCompare(a.d)||(b.t||0)-(a.t||0));
+  S.ver=(S.ver||0)+1;
   S.all=out; S.byId=Object.fromEntries(out.map(t=>[t.id,t]));
 }
 function cleanTx(t){const o={};for(const k of ["d","a","m","x","c","p","pb","s","acc","k","n","by","t","cb","f"]) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k];return o}
@@ -836,8 +862,8 @@ function showTip(col){
 // Confronto tra addebiti della carta sul conto e spese dell'estratto carta del mese prima
 function vCardCheck(){
   const hasCard=S.all.some(t=>t.s===FLOWS.carta);
-  const charged=ym=>-sum(S.all.filter(t=>t.s===FLOWS.cc&&t.k==="giroconto"&&ymOf(t.d)===ym&&t.a<0));
-  const rows=perMonths().map(ym=>({ym,ch:charged(ym),sp:cardNet(shiftYM(ym,-1))})).filter(r=>r.ch>0.004||r.sp>0.004);
+  const cut=cardCut();
+  const rows=perMonths().map(ym=>{const list=cardCharges(ym),[from,to]=cardRange(ym,cut);return {ym,list,from,to,ch:-sum(list),sp:cardSpent(ym,cut)}}).filter(r=>r.ch>0.004||r.sp>0.004);
   const sus=perTx().filter(t=>t.s!==FLOWS.carta&&t.s!==CASH&&(t.k==="spesa"||t.k==="entrata")).map(t=>{
     const v=isVincolo(norm(t.x+" "+t.m));
     const c=!v&&t.s===FLOWS.cc&&t.k==="spesa"&&t.a<0?cardCharge(t.d,t.a):null;
@@ -848,11 +874,13 @@ function vCardCheck(){
   return `<section class="block"><h2>Carta di credito e trasferimenti</h2>
     ${sus.length?`<p class="banner">Questi movimenti sembrano l’addebito della carta, un vincolo o uno spostamento tra i vostri conti, ma contano come spesa o entrata. Così verrebbero contati due volte.</p>
       ${sus.map(({t,why})=>`<div class="rules" style="margin-bottom:8px"><div><span><b>${h(t.m)}</b> · ${ddmm(t.d)}<br><span class="hint">${h(why)}</span></span><span class="num" style="white-space:nowrap">${t.a>0?"+":"−"}${eur(Math.abs(t.a))}</span></div><div><span class="hint" style="margin:0">${h(srcName(t))}</span><button class="link" data-act="mkgiro" data-id="${h(t.id)}" ${S.canWrite?"":"disabled"}>Segna come giroconto</button></div></div>`).join("")}`:""}
-    ${rows.length?`<div class="recon num">
-      <span class="h">Addebito sul conto</span><span class="h">Spese carta mese prima</span><span class="h">Esito</span>
-      ${rows.map(r=>{const d=r.ch-r.sp,ok=Math.abs(d)<=1;return `<span>${h(monthName(r.ym))} · ${eur(r.ch)}</span><span>${eur(r.sp)}</span><span class="${ok?"ok":"ko"}">${ok?"Torna":(d>0?"+":"−")+eur(Math.abs(d))}</span>`}).join("")}
-    </div>
-    <p class="hint" style="padding-bottom:10px">${hasCard?"L’addebito sul conto non conta come spesa: contano le singole spese della carta. Se l’estratto chiude a metà mese, piccole differenze tra i due mesi sono normali.":"Importa anche l’estratto della carta per confrontarlo con l’addebito sul conto."}</p>`:""}
+    ${rows.length?`<div class="recon num"><span class="h">Addebito carta sul conto</span><span class="h">Spese carta del ciclo</span><span class="h">Esito</span></div>
+      ${rows.map(r=>{const d=r.ch-r.sp,ok=Math.abs(d)<=1,miss=!r.list.length;return `<details class="rrow"><summary class="recon num">
+        <span>${h(monthName(r.ym))} · ${miss?"—":eur(r.ch)}</span><span>${eur(r.sp)}</span><span class="${ok?"ok":"ko"}">${ok?"Torna":miss?"Addebito non trovato":(d>0?"+":"−")+eur(Math.abs(d))}</span></summary>
+        <div class="hint">Spese carta dal ${ddmm(nextDay(r.from))} al ${ddmm(r.to)}, al netto dei rimborsi.</div>
+        ${r.list.length?r.list.map(t=>`<button class="tx" data-act="edit" data-id="${h(t.id)}"><span class="m">${h(t.m||t.x)}</span><span class="a num">−${eur(-t.a)}</span><span class="meta"><span>${h(srcName(t))}</span><span class="num">${ddmm(t.d)}</span><span>${h(KINDS[t.k]||"")}</span></span></button>`).join(""):`<div class="hint">Nessun movimento del conto riconosciuto come addebito della carta in ${h(monthName(r.ym))}. Se c’è, aprilo da Movimenti e controlla la descrizione.</div>`}
+      </details>`}).join("")}
+    <p class="hint" style="padding-bottom:10px">${hasCard?`Tocca un mese per vedere quali movimenti ho contato. L’estratto carta chiude ${cut?cut+(cut===1?" giorno":" giorni")+" prima della fine del mese":"l’ultimo giorno del mese"}${cut===2?"":" (stimato dai vostri dati)"}. L’addebito sul conto non conta come spesa: contano le singole spese della carta.`:"Importa anche l’estratto della carta per confrontarlo con l’addebito sul conto."}</p>`:""}
   </section>`;
 }
 
