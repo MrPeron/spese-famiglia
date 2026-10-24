@@ -164,8 +164,8 @@ textarea{min-height:110px;resize:vertical}
 .sheet h3{font:800 1.35rem/1.2 var(--display);margin:4px 0 2px}
 .sheet .sub{color:var(--muted);font-size:.86rem;margin-bottom:6px;word-break:break-word}
 .rules{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.rules div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--line);font-size:.9rem}
-.rules div:first-child{border-top:0}
+.rules>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--line);font-size:.9rem}
+.rules>div:first-child{border-top:0}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.92rem;margin:10px 0}
 .check input{width:20px;height:20px;margin-top:2px;accent-color:var(--primary)}
 
@@ -209,6 +209,8 @@ textarea{min-height:110px;resize:vertical}
 .bud label:first-child{border-top:0}
 .bud small{display:block;color:var(--muted);font-size:.78rem}
 .bud input{min-height:40px;text-align:right}
+.rules .crow{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;padding:12px}
+.crow select{min-height:38px;padding:6px 8px;font-size:15px}
 </style>
 </head>
 <body>
@@ -270,7 +272,7 @@ const FLOWS = {cc:"Conto corrente", carta:"Carta di credito", ris:"Conto risparm
 
 // Dizionario di partenza (ordine = priorità)
 const DICT = [
-  ["mutuo","mutuo|finanziament|prestito personale|leasing|cessione del quinto|agos|findomestic|compass|cofidis|santander consumer"],
+  ["mutuo","mutuo|finanziament|prestito personale|leasing|cessione del quinto|agos\\b|findomestic|compass\\b|cofidis|santander consumer"],
   ["abbonamenti","netflix|spotify|disney|dazn|prime video|amazon prime|apple\\.com|itunes|google play|youtube|sky\\b|now tv|nowtv|audible|icloud|openai|chatgpt|anthropic|microsoft|adobe|dropbox|timvision|infinity|paramount"],
   ["online","amazon|amzn|ebay|aliexpress|temu|shein|etsy|wish\\.com"],
   ["banca","commission|canone|imposta di bollo|bollo|ritenut|f24|agenzia (delle )?entrate|pagopa|assicuraz|generali|allianz|unipol|axa|zurich|reale mutua|interessi|spese tenuta|tari\\b|inps"],
@@ -445,6 +447,10 @@ async function putTx(list){
   for(const t of list){const ym=ymOf(t.d);(by[ym]=by[ym]||{})[t.id]=cleanTx(t)}
   for(const [ym,map] of Object.entries(by)) await setDoc(doc(S.db,"months",ym),{tx:map},{merge:true});
 }
+async function delTxList(list){
+  const by={};for(const t of list)(by[ymOf(t.d)]=by[ymOf(t.d)]||{})[t.id]=deleteField();
+  for(const [ym,m] of Object.entries(by)) await setDoc(doc(S.db,"months",ym),{tx:m},{merge:true});
+}
 async function delTx(t){
   await setDoc(doc(S.db,"months",ymOf(t.d)),{tx:{[t.id]:deleteField()}},{merge:true});
 }
@@ -499,7 +505,8 @@ async function readGrids(file){
 const COLRE = {
   d:/^(data( (contabile|operazione|registrazione|movimento|acquisto|transazione|op\.?))?|date|giorno|data op\.?)$/,
   dv:/data valuta|valuta/,
-  x:/descrizion|causale|dettagli|operazione|esercente|beneficiario|controparte|motivo|description|merchant|note|informazioni/,
+  x:/descrizion|causale|dettagli|operazione|esercente|beneficiario|controparte|motivo|description|merchant|note|informazioni|^movimento$|parola chiave|osservazion|concetto/,
+  xt:/^(parola chiave|tipo|tipo operazione|tipologia)$/,
   a:/^(importo|importi|amount|ammontare|valore|importo (in )?eur|importo euro|importo \(eur\)|importo €)$|^importo/,
   deb:/^(dare|uscit|addebit|debit|addebiti|movimenti dare|importo dare)/,
   cre:/^(avere|entrat|accredit|credit|accrediti|movimenti avere|importo avere)/
@@ -512,7 +519,7 @@ function findHeader(grid){
     const a=has(COLRE.a),deb=has(COLRE.deb),cre=has(COLRE.cre);
     if(d>=0&&(a>=0||deb>=0||cre>=0)){
       const xs=[];cells.forEach((c,i)=>{if(c&&COLRE.x.test(c)&&i!==d&&!COLRE.dv.test(c))xs.push(i)});
-      return {hdr:r,map:{d,x1:xs[0]??-1,x2:xs[1]??-1,a:(deb>=0&&cre>=0&&a<0)?-1:a,deb:a>=0?-1:deb,cre:a>=0?-1:cre}};
+      return {hdr:r,map:{d,x1:xs[0]??-1,x2:xs[1]??-1,x3:xs[2]??-1,a:(deb>=0&&cre>=0&&a<0)?-1:a,deb:a>=0?-1:deb,cre:a>=0?-1:cre}};
     }
   }
   return null;
@@ -557,7 +564,7 @@ async function handleFile(file){
     if(!grid){
       grid=grids.find(g=>g.length>1)||grids[0]||[];
       const r=grid.findIndex(row=>(row||[]).filter(c=>String(c).trim()).length>=3);
-      found={hdr:Math.max(r,0),map:{d:-1,x1:-1,x2:-1,a:-1,deb:-1,cre:-1}};
+      found={hdr:Math.max(r,0),map:{d:-1,x1:-1,x2:-1,x3:-1,a:-1,deb:-1,cre:-1}};
     }
     const cols=(grid[found.hdr]||[]).map((c,i)=>String(c).trim()||("Colonna "+(i+1)));
     const toks=idTokens(grid,found.hdr),acc=S.settings.accounts||{},at=S.settings.acctok||{};
@@ -571,9 +578,12 @@ async function handleFile(file){
     if(!payer) for(const t of toks) if(acc[t]&&payerOpts().includes(acc[t])){payer=acc[t];payerBy=t.startsWith("iban")?"Riconosciuto dall’IBAN nel file":"Riconosciuto dal numero di carta";break}
     if(!payer&&saved&&saved.pb&&payerOpts().includes(saved.pb)){payer=saved.pb;payerBy="Come l’ultimo file con questo formato"}
     if(!payer) payer=devPayer();
-    S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,x1:saved.x1,x2:saved.x2,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
+    S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,x1:saved.x1,x2:saved.x2,x3:saved.x3??-1,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
       invert:saved?!!saved.inv:false,person:members()[0],edits:{},rows:[],ai:null,remembered:!!saved,showMap:!saved&&(found.map.d<0)};
-    if(!saved&&S.imp.map.a>=0){
+    // un formato salvato senza descrizione (prima che riconoscessi queste colonne) prende quelle trovate ora
+    if(S.imp.map.x1<0&&found.map.x1>=0){S.imp.map.x1=found.map.x1;S.imp.map.x2=found.map.x2;S.imp.map.x3=found.map.x3??-1}
+    if(S.imp.map.x1<0) S.imp.showMap=true;
+    if(!saved&&flow==="carta"&&S.imp.map.a>=0){
       let pos=0,tot=0;const xi=S.imp.map.x1;
       for(let r=found.hdr+1;r<grid.length;r++){const row=grid[r]||[];const n=num(row[S.imp.map.a]);if(isNaN(n)||n===0)continue;const dsc=norm(xi>=0?row[xi]:"");if(RE_SALDO.test(dsc)||RE_GIRO.test(dsc)||RE_STORNO.test(dsc))continue;tot++;if(n>0)pos++}
       if(tot>=(flow==="carta"?2:3)&&pos/tot>(flow==="carta"?0.5:0.75)) S.imp.invert=true;
@@ -587,7 +597,14 @@ function buildRows(){
   if(mp.d<0||(mp.a<0&&mp.deb<0&&mp.cre<0)){I.rows=[];return}
   for(let r=I.hdr+1;r<g.length;r++){
     const row=g[r]||[];const d=toISO(row[mp.d]);if(!d) continue;
-    const desc=[mp.x1,mp.x2].filter(i=>i>=0).map(i=>String(row[i]??"").replace(/\s+/g," ").trim()).filter(Boolean).join(" · ");
+    // più colonne di descrizione: tolgo i doppioni (BBVA ripete "Movimento" in "Osservazioni")
+    const parts=[];
+    for(const i of [mp.x1,mp.x2,mp.x3]){if(i==null||i<0)continue;const v=String(row[i]??"").replace(/\s+/g," ").trim();if(!v)continue;const nv=norm(v);
+      if(parts.some(q=>norm(q.v).includes(nv)))continue;for(let j=parts.length-1;j>=0;j--)if(nv.includes(norm(parts[j].v)))parts.splice(j,1);parts.push({i,v})}
+    const desc=parts.map(q=>q.v).join(" · ");
+    // il nome dell'esercente non viene dalla colonna del tipo di operazione ("Bonifico eseguito"), se c'è altro
+    const named=parts.filter(q=>!COLRE.xt.test(norm(I.cols[q.i]||"")));
+    const mdesc=(named.length?named:parts).map(q=>q.v).join(" ");
     let a;
     if(mp.a>=0) a=num(row[mp.a]);
     else{const de=mp.deb>=0?num(row[mp.deb]):NaN,cr=mp.cre>=0?num(row[mp.cre]):NaN;a=(isNaN(de)&&isNaN(cr))?NaN:(isNaN(cr)?0:Math.abs(cr))-(isNaN(de)?0:Math.abs(de))}
@@ -600,7 +617,7 @@ function buildRows(){
     let k=detectKind(desc,a,I.flow),gw=null;
     if(I.flow==="cc"&&k==="spesa"&&a<0){const w=cardCharge(d,a);if(w){k="giroconto";gw="Addebito carta: "+w}}
     if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownTransfer(d,a,I.acc,I.flow);if(w){k="giroconto";gw="Trasferimento tra i vostri conti: "+w}}
-    const tx={id,rk,d,a,x:desc,m:extractMerchant(desc),k,s:FLOWS[I.flow],acc:I.acc||undefined,p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
+    const tx={id,rk,d,a,x:desc,m:extractMerchant(mdesc),k,s:FLOWS[I.flow],acc:I.acc||undefined,p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
     if(k==="spesa"){const ac=autoCat(tx);if(ac){tx.c=ac.c;if(ac.p)tx.p=ac.p;tx.cb=ac.by}}
     const e=I.edits[rk];if(e)Object.assign(tx,e);
     tx.dup=!!S.byId[id];
@@ -635,8 +652,8 @@ function parseArr(t){const a=t.indexOf("["),b=t.lastIndexOf("]");if(a<0||b<a){co
 async function aiClassify(){
   const I=S.imp;if(!I||I.ai) return;
   if(!apiKey()){toast("Inserisci la chiave API Claude nelle impostazioni.");openSettings();return}
-  const todo=I.rows.filter(r=>!r.dup&&r.k==="spesa"&&!r.c);
-  if(!todo.length){toast("Tutti i movimenti hanno già una categoria.");return}
+  const todo=I.rows.filter(r=>!r.dup&&r.k==="spesa"&&!r.c&&String(r.x||"").trim());
+  if(!todo.length){toast(I.rows.some(r=>!r.dup&&r.k==="spesa"&&!r.c)?"I movimenti da classificare non hanno descrizione: scegli prima la colonna della descrizione.":"Tutti i movimenti hanno già una categoria.");return}
   const groups={};for(const r of todo){const k=mkey(r.m)||r.id;(groups[k]=groups[k]||[]).push(r)}
   const uniq=Object.values(groups);
   const catList=CATS.map(([id,n])=>id+" = "+n).join("\n");
@@ -681,7 +698,7 @@ async function saveImport(){
   const btn=$("#saveImp");if(btn)btn.disabled=true;
   try{
     await putTx(list);
-    const patch={formats:{[I.sig]:{d:I.map.d,x1:I.map.x1,x2:I.map.x2,a:I.map.a,deb:I.map.deb,cre:I.map.cre,inv:I.invert,pb:I.payer}}};
+    const patch={formats:{[I.sig]:{d:I.map.d,x1:I.map.x1,x2:I.map.x2,x3:I.map.x3??-1,a:I.map.a,deb:I.map.deb,cre:I.map.cre,inv:I.invert,pb:I.payer}}};
     if(Object.keys(learn).length) patch.rules=learn;
     if(I.toks&&I.toks.length){patch.accounts={};patch.acctok={};for(const t of I.toks){patch.accounts[t]=I.payer;if(I.acc)patch.acctok[t]=I.acc}}
     await saveSettings(patch);
@@ -945,11 +962,13 @@ function vImp(){
       <div><label for="m_d">Data</label><select id="m_d" data-m="d">${opt(0,I.map.d)}</select></div>
       <div><label for="m_x1">Descrizione</label><select id="m_x1" data-m="x1">${opt(0,I.map.x1)}</select></div>
       <div><label for="m_x2">Descrizione 2 (facoltativa)</label><select id="m_x2" data-m="x2">${opt(0,I.map.x2)}</select></div>
+      <div><label for="m_x3">Descrizione 3 (facoltativa)</label><select id="m_x3" data-m="x3">${opt(0,I.map.x3??-1)}</select></div>
       <div><label for="m_a">Importo (colonna unica)</label><select id="m_a" data-m="a">${opt(0,I.map.a)}</select></div>
       <div><label for="m_deb">Uscite / Dare</label><select id="m_deb" data-m="deb">${opt(0,I.map.deb)}</select></div>
       <div><label for="m_cre">Entrate / Avere</label><select id="m_cre" data-m="cre">${opt(0,I.map.cre)}</select></div>
     </div>`:""}
     ${I.map.a>=0?`<label class="check"><input type="checkbox" id="inv" ${I.invert?"checked":""}><span>Gli importi positivi sono spese (tipico degli estratti della carta di credito)</span></label>`:""}
+    ${mapOk&&I.map.x1<0?`<p class="banner">Non trovo la colonna con la descrizione dei movimenti: sceglila qui sopra in “Descrizione”. Senza, i movimenti arrivano senza nome e non riesco a riconoscere giroconti ed esercenti.</p>`:""}
     ${!mapOk?`<p class="banner">Indica almeno la colonna della data e quella dell’importo.</p>`:`
     <div class="stats"><span>${fresh.length} nuovi</span>${dups?`<span>${dups} già presenti</span>`:""}<span>${ruleN} classificati in automatico</span>${noCat?`<span style="background:var(--ochre-soft)">${noCat} da classificare</span>`:""}</div>
     ${I.ai?`<p class="progress">Riconosco i beneficiari… ${I.ai.done}/${I.ai.tot} esercenti${I.searches?", "+I.searches+" ricerche online":""}</p>`:""}
@@ -1036,7 +1055,13 @@ function openSettings(){
     <div class="field"><label for="spay">Chi sostiene le spese (uno per riga)</label><textarea id="spay" style="min-height:70px">${h(payers().join("\n"))}</textarea></div>
     <div class="btns"><button class="btn" data-act="savesettings" ${S.canWrite?"":"disabled"}>Salva impostazioni</button></div>
     <div class="field"><div class="lab">Conti e carte (${contoList().length})</div>
-      ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>`<div><span style="flex:1;min-width:0">${h(v.n)}<br><span class="hint">${h(FLOWS[v.t]||"")}</span></span><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}" style="width:auto;min-height:36px;padding:4px 8px">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select><button class="link" data-act="delconto" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:`<p class="hint">Nessun conto: aggiungi quelli da cui importi gli estratti.</p>`}
+      ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>{const n=S.all.filter(t=>t.acc===k).length;return `<div class="crow">
+        <b>${h(v.n)}</b><span class="hint" style="margin:0">${n} ${n===1?"movimento":"movimenti"}</span>
+        <div class="two" style="flex-basis:100%"><select data-ct="${h(k)}" aria-label="Tipo di ${h(v.n)}">${Object.entries(FLOWS).map(([f,fn])=>`<option value="${f}" ${v.t===f?"selected":""}>${h(fn)}</option>`).join("")}</select><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
+        ${S.confirmClear===k?`<div class="banner" style="flex-basis:100%;margin:0">Eliminare tutti i ${n} movimenti importati da ${h(v.n)}? Il conto resta: poi puoi reimportare gli estratti.
+          <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearconto" data-k="${h(k)}">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
+        :`<div style="flex-basis:100%;display:flex;gap:16px">${n?`<button class="link" data-act="askclear" data-k="${h(k)}">Svuota il conto</button>`:""}<button class="link" data-act="delconto" data-k="${h(k)}" style="color:var(--danger)">Elimina il conto</button></div>`}
+      </div>`}).join("")}</div>`:`<p class="hint">Nessun conto: aggiungi quelli da cui importi gli estratti.</p>`}
       ${legacy.length&&contoList().length?legacy.map(([src,n],i)=>{const ok=contoList().filter(([,v])=>FLOWS[v.t]===src);return `<p class="hint" style="margin-top:10px">${n} movimenti “${h(src)}” importati prima dei conti.${ok.length?" Assegnali a:":" Aggiungi un conto di questo tipo per assegnarli."}</p>${ok.length?`<div class="two"><select id="lg_${i}" aria-label="Conto per ${h(src)}">${ok.map(([k,v])=>`<option value="${k}">${h(v.n)}</option>`).join("")}</select><button class="btn ghost" data-act="assignleg" data-s="${h(src)}" data-i="${i}" ${S.canWrite?"":"disabled"}>Assegna</button></div>`:""}`}).join(""):""}
     </div>
     ${contoForm("sc")}
@@ -1164,6 +1189,12 @@ document.addEventListener("click",async e=>{
     try{await saveSettings({conti:{[id]:v}});S.settings.conti={...conti(),[id]:v};S.impAcc=id;S.impNew=false;toast("Conto aggiunto");if(S.sheet&&S.sheet.type==="settings")openSettings();else render()}
     catch(err){toast(errMsg(err));el.disabled=false}
   }
+  else if(act==="askclear"){S.confirmClear=el.dataset.k;openSettings()}
+  else if(act==="noclear"){S.confirmClear=null;openSettings()}
+  else if(act==="clearconto"){
+    const k=el.dataset.k,list=S.all.filter(t=>t.acc===k);el.disabled=true;
+    try{await delTxList(list);S.confirmClear=null;toast("Eliminati "+list.length+" movimenti");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
+  }
   else if(act==="delconto"){const id=el.dataset.k;try{await saveSettings({conti:{[id]:null}});const c={...conti()};delete c[id];S.settings.conti=c;openSettings()}catch(err){toast(errMsg(err))}}
   else if(act==="assignleg"){
     const src=el.dataset.s,target=$("#lg_"+el.dataset.i).value;if(!conti()[target])return;
@@ -1233,6 +1264,12 @@ document.addEventListener("change",async e=>{
   if(id==="fs"){S.f.s=t.value;t.blur();render();return}
   if(id==="fpb"){S.f.pb=t.value;t.blur();render();return}
   if(id==="hfp"||id==="hfpb"||id==="hfc"){S.hf[id.slice(2)]=t.value;t.blur();render();return}
+  if(t.dataset.ct){
+    const id2=t.dataset.ct,c=conti()[id2];if(!c)return;const v={...c,t:t.value};
+    const upd=S.all.filter(x=>x.acc===id2&&x.s!==FLOWS[t.value]).map(x=>({...x,s:FLOWS[t.value]}));
+    try{await saveSettings({conti:{[id2]:v}});S.settings.conti={...conti(),[id2]:v};if(upd.length)await putTx(upd);toast(upd.length?"Tipo cambiato. Per riclassificare i movimenti già importati, svuota il conto e reimporta":"Tipo cambiato")}catch(err){toast(errMsg(err))}
+    return;
+  }
   if(t.dataset.cpb){
     const id2=t.dataset.cpb,c=conti()[id2];if(!c)return;const old=c.pb,nv=t.value,v={...c,pb:nv};
     const upd=S.all.filter(x=>x.acc===id2&&x.pb===old).map(x=>({...x,pb:nv}));
