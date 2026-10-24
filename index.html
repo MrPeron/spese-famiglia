@@ -175,7 +175,9 @@ textarea{min-height:110px;resize:vertical}
 @media (min-width:640px){.filters{grid-template-columns:repeat(4,1fr)}}
 
 /* Filtri riepilogo, budget, grafico */
+.seg.pages{display:grid;grid-template-columns:repeat(3,1fr);width:100%;margin-top:6px}
 .filters.hf{grid-template-columns:1fr 1fr;margin-top:12px}
+.filters.hf.two2 select:last-child{grid-column:auto}
 .filters.hf select:last-child{grid-column:1/-1}
 @media (min-width:640px){.filters.hf{grid-template-columns:repeat(3,1fr)}.filters.hf select:last-child{grid-column:auto}}
 .bh{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
@@ -217,6 +219,9 @@ textarea{min-height:110px;resize:vertical}
 .bud input{min-height:40px;text-align:right}
 .rules .crow{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;padding:12px}
 .crow select{min-height:38px;padding:6px 8px;font-size:15px}
+.bald summary{list-style:none;cursor:pointer;font-size:.9rem}
+.bald summary::-webkit-details-marker{display:none}
+.bald input{min-height:40px}
 </style>
 </head>
 <body>
@@ -273,12 +278,12 @@ function rebuildCats(){
   for(const [id,n,c] of CATS) CAT[id]={n,c};
 }
 const KINDS = {spesa:"Spesa", prelievo:"Prelievo contanti", entrata:"Entrata", giroconto:"Giroconto / addebito carta"};
-const DEFAULTS = {members:["Famiglia","Federica","Alessandro","Martino","Ludovica"], payers:["Alessandro","Federica"], rules:{}, formats:{}, accounts:{}, budgets:{}, conti:{}, acctok:{}, cats:{}};
+const DEFAULTS = {members:["Famiglia","Federica","Alessandro","Martino","Ludovica"], payers:["Alessandro","Federica"], rules:{}, formats:{}, accounts:{}, budgets:{}, conti:{}, acctok:{}, cats:{}, own:["Revolut","eToro"]};
 const FLOWS = {cc:"Conto corrente", carta:"Carta di credito", ris:"Conto risparmio"};
 
 // Dizionario di partenza (ordine = priorità)
 const DICT = [
-  ["mutuo","mutuo|finanziament|prestito personale|leasing|cessione del quinto|agos\\b|findomestic|compass\\b|cofidis|santander consumer"],
+  ["mutuo","mutuo|bmw bank|bmw financial|finanziament|prestito personale|leasing|cessione del quinto|agos\\b|findomestic|compass\\b|cofidis|santander consumer"],
   ["abbonamenti","netflix|spotify|disney|dazn|prime video|amazon prime|apple\\.com|itunes|google play|youtube|sky\\b|now tv|nowtv|audible|icloud|openai|chatgpt|anthropic|microsoft|adobe|dropbox|timvision|infinity|paramount"],
   ["online","amazon|amzn|ebay|aliexpress|temu|shein|etsy|wish\\.com"],
   ["banca","commission|canone|imposta di bollo|bollo|ritenut|f24|agenzia (delle )?entrate|pagopa|assicuraz|generali|allianz|unipol|axa|zurich|reale mutua|interessi|spese tenuta|tari\\b|inps"],
@@ -286,7 +291,7 @@ const DICT = [
   ["ristoranti","ristorant|trattoria|osteria|pizzeri|pizza|bar\\b|caffe|cafe\\b|bistrot|sushi|mcdonald|burger king|kfc\\b|starbucks|autogrill|deliveroo|glovo|just ?eat|gelateri|pasticceri|enoteca|birreri|pub\\b|roadhouse|old wild west|spizzico|paninoteca|piadineri|kebab|ramen"],
   ["auto","enilive|eni\\b|q8|tamoil|esso\\b|agip|ip\\b|api\\b|shell|totalerg|repsol|carburant|distributore|benzina|gasolio|autolavaggio|gommista|officina|carrozzeri|norauto|revisione"],
   ["trasporti","autostrad|telepass|trenitalia|italo\\b|frecciarossa|atm\\b|actv|mobilita|uber|free ?now|taxi|parcheggi|parking|easypark|mycicero|flixbus|busitalia"],
-  ["casa","enel\\b|hera\\b|a2a|iren\\b|edison|acea\\b|sorgenia|plenitude|ascopiave|veritas|acquedott|tim\\b|telecom|vodafone|wind ?tre|iliad|fastweb|tiscali|condomin|affitto"],
+  ["casa","alto trevigiano|servizi idrici|enel\\b|hera\\b|a2a|iren\\b|edison|acea\\b|sorgenia|plenitude|ascopiave|veritas|acquedott|tim\\b|telecom|vodafone|wind ?tre|iliad|fastweb|tiscali|condomin|affitto"],
   ["arredo","ikea|leroy merlin|brico|obi\\b|tecnomat|maisons du monde|mondo convenienza|kasanova|flying tiger|tiger\\b|ferramenta|vivaio|garden|zara home|action\\b|jysk"],
   ["salute","farmaci|parafarmaci|ospedal|ulss|asl\\b|ticket sanit|dentist|odontoiatr|medic|clinica|poliambulator|ottica|optic|laborator|fisioterap|analisi"],
   ["abbigliamento","zara\\b|h&m|hm\\b|ovs\\b|benetton|primark|calzedonia|intimissimi|tezenis|bershka|pull ?& ?bear|stradivarius|mango\\b|uniqlo|piazza italia|terranova|coin\\b|rinascente|foot ?locker|calzatur|pittarosso|deichmann|geox|nike|adidas|zalando|vinted|abbigliament|boutique|outlet"],
@@ -300,20 +305,20 @@ const DICT = [
   ["regali","fiorist|gioielleri|pandora|swarovski|bomboniere|regal"]
 ].map(([c,re]) => [c, new RegExp("(?:^|[^a-z0-9])(?:" + re + ")","i")]);
 
-const RE_PREL = /(?:^|[^a-z])(prelievo|prelevamento|prel\.?\s|atm\b|cash withdrawal|withdrawal|anticipo contant)/i;
+const RE_PREL = /(?:^|[^a-z])(prelievo|prelevamento|atm\b|cash withdrawal|withdrawal|anticipo contant)/i;
 const RE_SALDO = /(pagamento saldo|saldo estratto|addebito (in|su) (c\/c|conto)|addebito in conto|pagamento estratto|addebito e\/c|pagamento rata)/i;
 const RE_STORNO = /(storno|rimborso|reso\b|refund|accredito pos)/i;
 // Vincoli (es. Widiba): il capitale che va sul vincolo e torna indietro è un giroconto; interessi e ritenute no
-const RE_VINC = /(vincol|svincol|deposito a termine|time deposit)/i;
-const RE_VINC_NO = /(ritenut|imposta|bollo|interess|competenz)/i;
+const RE_VINC = /(vincol|svincol|linea libera|deposito a termine|time deposit)/i;
+const RE_VINC_NO = /(liquidazione interessi|interessi a credito|ritenuta fiscale su|imposta|bollo)/i;
 function isVincolo(t){return RE_VINC.test(t)&&!RE_VINC_NO.test(t)}
-const RE_GIRO = /(giroconto|giro conto|saldo carta|addebito (mensile )?carta di credito|(addebit|pagament|saldo|rimbors|estratto)\w*\s(\S+\s){0,4}?cart[ae]\s(di\s)?credito|carte di credito|carta credito\b|estratto conto carta|addebito e\/c|addebito nexi|nexi payments|ricarica carta|ricarica prepagata)/i;
+const RE_GIRO = /(giroconto|giro conto|girofondo|trasferimento (da|su|a) conto|saldo carta|addebito (mensile )?carta di credito|(addebit|pagament|saldo|rimbors|estratto)\w*\s(\S+\s){0,4}?cart[ae]\s(di\s)?credito|carte di credito|carta credito\b|estratto conto carta|addebito e\/c|addebito nexi|nexi payments|ricarica carta|ricarica prepagata)/i;
 
 // ---------- Stato ----------
 const S = {
   db:null, auth:null, authed:null, authMsg:"", uid:null, local:false, canWrite:true,
   months:{}, settings:clone(DEFAULTS), all:[], byId:{},
-  view:"home", per:{from:ymOf(today()),to:ymOf(today())}, hf:{p:"",pb:"",c:""}, f:{q:"",c:"",p:"",s:"",pb:""}, msort:"data",
+  view:"home", page:(()=>{try{return localStorage.getItem("sf-page")||"Famiglia"}catch(e){return "Famiglia"}})(), inclGiro:false, per:{from:ymOf(today()),to:ymOf(today())}, hf:{p:"",pb:"",c:""}, f:{q:"",c:"",p:"",s:"",pb:""}, msort:"data",
   cash:null, imp:null, dirty:false, names:{}
 };
 rebuildCats();
@@ -366,11 +371,17 @@ function perLabel(){
 }
 function perIn(){return S.per.from===S.per.to?"a "+monthName(S.per.from):"in "+perLabel()}
 
+// Pagine: Famiglia = tutti i conti; Alessandro / Federica = i conti intestati a loro (e i contanti che hanno registrato)
+function pages(){return [...payers(),"Famiglia"]}
+function isFam(){return S.page==="Famiglia"||!payers().includes(S.page)}
+function pageAccs(){return isFam()?null:new Set(contoList().filter(([,v])=>v.pb===S.page).map(([k])=>k))}
+function inPage(t){const A=pageAccs();if(!A) return true;return conti()[t.acc]?A.has(t.acc):t.pb===S.page}
+function pageSeg(){return `<div class="seg pages" role="group" aria-label="Pagina">${pages().map(p=>`<button data-act="page" data-p="${h(p)}" aria-pressed="${(isFam()?"Famiglia":S.page)===p}">${h(p)}</button>`).join("")}</div>`}
 // Filtri del riepilogo: senza filtro "sostenuta da" vale per Alessandro + Federica insieme
-function hfOk(t){const f=S.hf;return (!f.p||(t.p||members()[0])===f.p)&&(!f.pb||t.pb===f.pb)&&(!f.c||(t.c||"altro")===f.c)}
-function spOf(list){return list.filter(t=>t.k==="spesa"&&hfOk(t))}
+function hfOk(t){const f=S.hf;return (!f.p||(t.p||members()[0])===f.p)&&(!f.pb||!isFam()||t.pb===f.pb)&&(!f.c||(t.c||"altro")===f.c)}
+function spOf(list){return list.filter(t=>t.k==="spesa"&&inPage(t)&&hfOk(t))}
 function budgets(){return S.settings.budgets||{}}
-function budgetOn(){return !S.hf.p&&!S.hf.pb}
+function budgetOn(){return isFam()&&!S.hf.p&&!S.hf.pb}
 function monthBudget(){const B=budgets();return Object.entries(B).filter(([c,v])=>v>0&&(!S.hf.c||S.hf.c===c)).reduce((t,[,v])=>t+v,0)}
 
 // Addebito della carta di credito sul conto: deve corrispondere al dettaglio dell'estratto carta
@@ -406,22 +417,46 @@ function cardCharge(d,a){
   if(net>1&&Math.abs(net-amt)<=1) return "pari alle spese con la carta dal "+ddmm(nextDay(from))+" al "+ddmm(to);
   return null;
 }
-// Bonifico tra i vostri conti: stesso importo uscito da un conto ed entrato in un altro entro 4 giorni
+// Conti vostri che non importate (Revolut, conti a vostro nome): i bonifici verso/da questi sono giroconti
+function ownNames(extra){
+  const out=new Set();
+  for(const hn of [...contoList().map(([,v])=>v.holder),extra]) if(hn){const w=norm(hn).split(" ").filter(Boolean);if(w.length>=2){out.add(w.join(" "));out.add([...w.slice(1),w[0]].join(" "))}}
+  for(const n of (S.settings.own||[])) if(String(n).trim()) out.add(norm(n));
+  return [...out].filter(n=>n.length>=4);
+}
+function ownName(desc,extra){
+  const t=" "+norm(desc).replace(/[^a-z0-9]+/g," ")+" ";
+  if(/ (sdd|mandato|addebito diretto) /.test(t)) return null;
+  for(const n of ownNames(extra)){const k=" "+n.replace(/[^a-z0-9]+/g," ").trim()+" ";if(t.includes(k)) return n}
+  return null;
+}
+// Bonifico tra i vostri conti: stesso importo uscito da un conto ed entrato in un altro entro 6 giorni
 function ownTransfer(d,a,acc,flow){
   if(flow==="carta") return null;
   for(const t of S.all){
     if(t.s===FLOWS.carta||t.s===CASH||t.k==="prelievo") continue;
+    if(isVincolo(norm((t.x||"")+" "+(t.m||"")))) continue;
     if(acc?t.acc===acc:(!t.acc&&t.s===FLOWS[flow])) continue;
-    if(Math.abs(t.a+a)<0.01&&dayDiff(t.d,d)<=4) return (a<0?"entrato lo stesso importo su ":"uscito lo stesso importo da ")+srcName(t)+" il "+ddmm(t.d);
+    if(Math.abs(t.a+a)<0.01&&dayDiff(t.d,d)<=6) return (a<0?"entrato lo stesso importo su ":"uscito lo stesso importo da ")+srcName(t)+" il "+ddmm(t.d);
   }
   return null;
 }
 
 function mkey(m){return norm(m).replace(/[^a-z0-9 &]/g," ").split(" ").filter(w=>w.length>1).slice(0,2).join(" ")}
+const MERCH_RE = [
+  /ESERCENTE\s*:\s*(.+?)(?:\s+IMP\.?\s*IN\b|\s+N\.\s*CARTA|$)/,          // Widiba carta
+  /\bSDD DA \S+\s+(.+?)\s+(?:MANDATO|$)/,                                    // UniCredit domiciliazione
+  /\bA FAVORE\s+(?:DI\s+)?(.+?)\s+(?:CODICE MANDATO|IBAN|$)/,                // Widiba bonifico / SDD
+  /\bORD:\s*(.+?)\s+(?:BIC|INF|IND)\b/,                                       // Widiba bonifico in entrata
+  /\b(?:A|DA):\s*(.+?)\s+PER:/,                                               // UniCredit bonifico
+  /\bDI EUR [\d.,]+\s+(.+)$/,                                                  // UniCredit carta di debito
+  /(?:PRESSO|C\/O|ESERCENTE|BENEFICIARIO|A FAVORE DI|FAVORE)\s*:?\s*(.+)/
+];
+// Toglie codici di causale e diciture fisse a zero ("COMM: 0,00 SPESE: 0,00", "Commissioni 0,00")
+function cleanDesc(v){return String(v??"").replace(/\s+/g," ").replace(/\b(comm(issioni)?( serv)?|spese)\s*:?\s*0,00\b/gi," ").replace(/\bTRN:\s*\S+/gi," ").replace(/\s+/g," ").trim()}
 function extractMerchant(desc){
-  let s=" "+String(desc||"").toUpperCase()+" ";
-  const m=s.match(/(?:PRESSO|C\/O|ESERCENTE|BENEFICIARIO|A FAVORE DI|FAVORE)\s*:?\s*(.+)/);
-  if(m) s=m[1];
+  let s=" "+String(desc||"").toUpperCase().replace(/\s+/g," ")+" ";
+  for(const re of MERCH_RE){const m=s.match(re);if(m&&m[1].trim()){s=m[1];break}}
   s=s.replace(/\*+\s*\d+/g," ")
      .replace(/\b\d{1,2}[\/.\-]\d{1,2}([\/.\-]\d{2,4})?\b/g," ")
      .replace(/\b\d{1,2}[:.]\d{2}\b/g," ")
@@ -533,10 +568,11 @@ async function readGrids(file){
   return [parseCSV(text,detectDelim(text))];
 }
 const COLRE = {
-  d:/^(data( (contabile|operazione|registrazione|movimento|acquisto|transazione|op\.?))?|date|giorno|data op\.?)$/,
-  dv:/data valuta|valuta/,
+  d:/^(data( (contabile|cont\.?|operazione|registrazione|movimento|acquisto|transazione|op\.?))?|date|giorno|data op\.?)$/,
+  dv:/data valuta|data val\.?$|valuta/,
   x:/descrizion|causale|dettagli|operazione|esercente|beneficiario|controparte|motivo|description|merchant|note|informazioni|^movimento$|parola chiave|osservazion|concetto/,
   xt:/^(parola chiave|tipo|tipo operazione|tipologia)$/,
+  bal:/^(disponibile|saldo|saldo contabile|saldo disponibile|saldo \(eur\))$/,
   a:/^(importo|importi|amount|ammontare|valore|importo (in )?eur|importo euro|importo \(eur\)|importo €)$|^importo/,
   deb:/^(dare|uscit|addebit|debit|addebiti|movimenti dare|importo dare)/,
   cre:/^(avere|entrat|accredit|credit|accrediti|movimenti avere|importo avere)/
@@ -549,7 +585,7 @@ function findHeader(grid){
     const a=has(COLRE.a),deb=has(COLRE.deb),cre=has(COLRE.cre);
     if(d>=0&&(a>=0||deb>=0||cre>=0)){
       const xs=[];cells.forEach((c,i)=>{if(c&&COLRE.x.test(c)&&i!==d&&!COLRE.dv.test(c))xs.push(i)});
-      return {hdr:r,map:{d,x1:xs[0]??-1,x2:xs[1]??-1,x3:xs[2]??-1,a:(deb>=0&&cre>=0&&a<0)?-1:a,deb:a>=0?-1:deb,cre:a>=0?-1:cre}};
+      return {hdr:r,map:{d,bal:has(COLRE.bal),x1:xs[0]??-1,x2:xs[1]??-1,x3:xs[2]??-1,a:(deb>=0&&cre>=0&&a<0)?-1:a,deb:a>=0?-1:deb,cre:a>=0?-1:cre}};
     }
   }
   return null;
@@ -598,6 +634,8 @@ async function handleFile(file){
     }
     const cols=(grid[found.hdr]||[]).map((c,i)=>String(c).trim()||("Colonna "+(i+1)));
     const toks=idTokens(grid,found.hdr),acc=S.settings.accounts||{},at=S.settings.acctok||{};
+    const pre=grid.slice(0,found.hdr).map(r=>(r||[]).map(c=>String(c??"")).join(" "));
+    let holder=null;for(const l of pre){const m=l.match(/rapporto:\s*IT\w+\s*-\s*(.+)/i);if(m){holder=m[1].trim();break}}
     let conto=conti()[S.impAcc]?S.impAcc:null,payer=null,payerBy="";
     const tokOk=(t,id)=>conti()[id]&&(t.startsWith("carta ")?conti()[id].t==="carta":conti()[id].t!=="carta");
     for(const t of toks) if(at[t]&&tokOk(t,at[t])){if(at[t]!==conto){conto=at[t];payerBy="Conto riconosciuto dal file: "+conti()[conto].n}break}
@@ -609,7 +647,7 @@ async function handleFile(file){
     if(!payer) for(const t of toks) if(acc[t]&&payerOpts().includes(acc[t])){payer=acc[t];payerBy=t.startsWith("iban")?"Riconosciuto dall’IBAN nel file":"Riconosciuto dal numero di carta";break}
     if(!payer&&saved&&saved.pb&&payerOpts().includes(saved.pb)){payer=saved.pb;payerBy="Come l’ultimo file con questo formato"}
     if(!payer) payer=devPayer();
-    S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,x1:saved.x1,x2:saved.x2,x3:saved.x3??-1,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
+    S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,holder,pre,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,bal:saved.bal??found.map.bal??-1,x1:saved.x1,x2:saved.x2,x3:saved.x3??-1,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
       invert:saved?!!saved.inv:false,person:members()[0],edits:{},rows:[],ai:null,remembered:!!saved,showMap:!saved&&(found.map.d<0)};
     // un formato salvato senza descrizione (prima che riconoscessi queste colonne) prende quelle trovate ora
     if(S.imp.map.x1<0&&found.map.x1>=0){S.imp.map.x1=found.map.x1;S.imp.map.x2=found.map.x2;S.imp.map.x3=found.map.x3??-1}
@@ -623,6 +661,19 @@ async function handleFile(file){
     S.view="imp";render();
   }catch(e){toast(e.message||"Non riesco a leggere il file.")}
 }
+// Saldi riportati dalla banca: in testata ("Saldo Contabile: 4.450,29 EUR A Credito") o colonna riga per riga ("Disponibile")
+function bankBal(I){
+  const out=[],g=I.grid,mp=I.map,bi=mp.bal!=null&&mp.bal>=0?mp.bal:-1;
+  const rows=[];for(let r=I.hdr+1;r<g.length;r++){const row=g[r]||[];const d=toISO(row[mp.d]);if(d)rows.push({d,b:bi>=0?num(row[bi]):NaN})}
+  if(!rows.length) return out;
+  const ds=rows.map(x=>x.d),min=ds.reduce((a,b)=>a<b?a:b),max=ds.reduce((a,b)=>a>b?a:b);
+  for(const l of I.pre||[]){const m=l.match(/saldo contabile:\s*(-?[\d.,]+)\s*eur\w*(?:\s*a\s*(credito|debito))?/i);if(m){const v=num(m[1]);if(!isNaN(v))out.push({d:max,v:/debito/i.test(m[2]||"")?-Math.abs(v):v});break}}
+  if(bi>=0){
+    const desc=rows[0].d>=rows[rows.length-1].d,endOf=d=>{const list=rows.filter(x=>x.d===d&&!isNaN(x.b));return list.length?(desc?list[0]:list[list.length-1]).b:NaN};
+    for(const d of [min,max]){const v=endOf(d);if(!isNaN(v)&&!out.some(o=>o.d===d))out.push({d,v:Math.round(v*100)/100})}
+  }
+  return out;
+}
 function buildRows(){
   const I=S.imp,g=I.grid,mp=I.map,out=[],seen={};
   if(mp.d<0||(mp.a<0&&mp.deb<0&&mp.cre<0)){I.rows=[];return}
@@ -630,7 +681,7 @@ function buildRows(){
     const row=g[r]||[];const d=toISO(row[mp.d]);if(!d) continue;
     // più colonne di descrizione: tolgo i doppioni (BBVA ripete "Movimento" in "Osservazioni")
     const parts=[];
-    for(const i of [mp.x1,mp.x2,mp.x3]){if(i==null||i<0)continue;const v=String(row[i]??"").replace(/\s+/g," ").trim();if(!v)continue;const nv=norm(v);
+    for(const i of [mp.x1,mp.x2,mp.x3]){if(i==null||i<0)continue;const v=cleanDesc(row[i]);if(!v||/^\d{1,4}$/.test(v))continue;const nv=norm(v);
       if(parts.some(q=>norm(q.v).includes(nv)))continue;for(let j=parts.length-1;j>=0;j--)if(nv.includes(norm(parts[j].v)))parts.splice(j,1);parts.push({i,v})}
     const desc=parts.map(q=>q.v).join(" · ");
     // il nome dell'esercente non viene dalla colonna del tipo di operazione ("Bonifico eseguito"), se c'è altro
@@ -648,6 +699,7 @@ function buildRows(){
     let k=detectKind(desc,a,I.flow),gw=null;
     if(I.flow==="cc"&&k==="spesa"&&a<0){const w=cardCharge(d,a);if(w){k="giroconto";gw="Addebito carta: "+w}}
     if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownTransfer(d,a,I.acc,I.flow);if(w){k="giroconto";gw="Trasferimento tra i vostri conti: "+w}}
+    if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownName(extractMerchant(mdesc),I.holder);if(w){k="giroconto";gw="Bonifico con un vostro conto: "+titleCase(w)}}
     const tx={id,rk,d,a,x:desc,m:extractMerchant(mdesc),k,s:FLOWS[I.flow],acc:I.acc||undefined,p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
     if(k==="spesa"){const ac=autoCat(tx);if(ac){tx.c=ac.c;if(ac.p)tx.p=ac.p;tx.cb=ac.by}}
     const e=I.edits[rk];if(e)Object.assign(tx,e);
@@ -729,8 +781,18 @@ async function saveImport(){
   const btn=$("#saveImp");if(btn)btn.disabled=true;
   try{
     await putTx(list);
-    const patch={formats:{[I.sig]:{d:I.map.d,x1:I.map.x1,x2:I.map.x2,x3:I.map.x3??-1,a:I.map.a,deb:I.map.deb,cre:I.map.cre,inv:I.invert,pb:I.payer}}};
+    // l'altro lato di un trasferimento, importato prima da un altro conto, diventa anche lui giroconto
+    const fix=[];
+    for(const r of list) if(r.k==="giroconto"&&r.acc){const o=counterpart(r);if(o&&o.acc&&(o.k==="spesa"||o.k==="entrata")&&o.cb!=="manuale"&&!fix.includes(o))fix.push(o)}
+    if(fix.length) await putTx(fix.map(o=>({...o,k:"giroconto",c:null})));
+    const patch={formats:{[I.sig]:{d:I.map.d,bal:I.map.bal??-1,x1:I.map.x1,x2:I.map.x2,x3:I.map.x3??-1,a:I.map.a,deb:I.map.deb,cre:I.map.cre,inv:I.invert,pb:I.payer}}};
     if(Object.keys(learn).length) patch.rules=learn;
+    // intestatario e saldi della banca sul conto, per la verifica dei saldi
+    if(I.acc&&conti()[I.acc]){
+      const c=conti()[I.acc],bk=bankBal(I),bks=[...(c.bks||[]).filter(o=>!bk.some(n=>n.d===o.d)),...bk].sort((x,y)=>x.d.localeCompare(y.d)).slice(-12);
+      const latest=bks[bks.length-1];
+      patch.conti={[I.acc]:{...c,...(I.holder&&!c.holder?{holder:I.holder}:{}),bks,...(!c.bal&&latest?{bal:{...latest,src:"banca"}}:{})}};
+    }
     if(I.toks&&I.toks.length){patch.accounts={};patch.acctok={};for(const t of I.toks){if(t.startsWith("carta ")!==(I.flow==="carta"))continue;patch.accounts[t]=I.payer;if(I.acc)patch.acctok[t]=I.acc}}
     await saveSettings(patch);
     const latest=list.map(t=>t.d).sort().pop();
@@ -747,10 +809,12 @@ function vHome(){
       <p>Importa i movimenti del conto corrente o della carta di credito dall’home banking (Excel o CSV): gli esercenti vengono riconosciuti e messi in categoria. Le spese in contanti le registrate voi, al volo, dal telefono.</p>
       <div class="btns"><button class="btn" data-nav="imp">Importa un estratto</button><button class="btn ghost" data-nav="cash">Registra contanti</button></div>
     </section>`;
-  const nm=perMonths().length,f=S.hf,filtered=!!(f.p||f.pb||f.c);
-  const tx=perTx(),sp=spOf(tx);
+  const nm=perMonths().length,f=S.hf,fam=isFam(),filtered=!!(f.p||(fam&&f.pb)||f.c);
+  const tx=perTx().filter(inPage),sp=spOf(tx);
   const prevPer=S.all.filter(t=>{const ym=ymOf(t.d);return ym>=shiftYM(S.per.from,-nm)&&ym<=shiftYM(S.per.to,-nm)});
-  const tot=-sum(sp),prev=-sum(spOf(prevPer));
+  const J=fam?null:jointFlows(tx);
+  const addJ=J&&S.inclGiro?Math.max(J.net,0):0;
+  const tot=-sum(sp)+addJ,prev=-sum(spOf(prevPer));
   const byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const B=budgetOn()?budgets():{};
   const catIds=new Set(Object.entries(byC).filter(([,v])=>v>0.004).map(([c])=>c));
@@ -764,9 +828,9 @@ function vHome(){
   const prel=-sum(tx.filter(t=>t.k==="prelievo"&&pbOk(t))),cashSp=-sum(tx.filter(t=>t.k==="spesa"&&t.s===CASH&&pbOk(t))),untr=prel-cashSp;
   const inc=sum(tx.filter(t=>t.k==="entrata"));
   const [ip,dp]=eurSplit(tot);
-  const prevName=nm===1?monthName(shiftYM(S.per.from,-1)):"il periodo precedente";
+  const prevName=nm===1?"a "+monthName(shiftYM(S.per.from,-1)):"al periodo precedente";
   let delta="";
-  if(prev>0){const d=tot-prev;delta=`<div class="delta">${d>=0?"<b>"+eur(d)+"</b> in più":"<b>"+eur(-d)+"</b> in meno"} rispetto a ${h(prevName)}</div>`}
+  if(prev>0){const d=tot-prev;delta=`<div class="delta">${d>=0?"<b>"+eur(d)+"</b> in più":"<b>"+eur(-d)+"</b> in meno"} rispetto ${h(prevName)}</div>`}
   const totB=budgetOn()?monthBudget()*nm:0;
   const budLine=totB>0?`<div class="delta">Budget ${eur(totB)}: ${tot<=totB?"restano <b>"+eur(totB-tot)+"</b>":`<b style="color:var(--danger)">superato di ${eur(tot-totB)}</b>`}</div>`:"";
   const pos=cats.reduce((t,[,v])=>t+Math.max(v,0),0)||1;
@@ -783,17 +847,19 @@ function vHome(){
   };
   const hasB=Object.values(budgets()).some(v=>v>0);
   return `
-  <div class="filters hf">
+  ${pageSeg()}
+  <div class="filters hf ${fam?"":"two2"}">
     <select id="hfp" aria-label="Beneficiario"><option value="">Tutti i beneficiari</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="hfc" aria-label="Categoria"><option value="">Tutte le categorie</option>${CATS.map(([id,n])=>`<option value="${id}" ${f.c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
-    <select id="hfpb" aria-label="Sostenute da"><option value="">Pagate da ${h(payers().join(" + "))}</option>${payerOpts().map(m=>`<option value="${h(m)}" ${f.pb===m?"selected":""}>${m===JOINT?"Pagate dai conti cointestati":"Pagate da "+h(m)}</option>`).join("")}</select>
+    ${fam?`<select id="hfpb" aria-label="Sostenute da"><option value="">Pagate da ${h(payers().join(" + "))}</option>${payerOpts().map(m=>`<option value="${h(m)}" ${f.pb===m?"selected":""}>${m===JOINT?"Pagate dai conti cointestati":"Pagate da "+h(m)}</option>`).join("")}</select>`:""}
   </div>
   <section class="hero">
-    <div class="lbl">Speso ${h(perIn())}${filtered?" · con filtri":""}</div>
+    <div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())}${filtered?" · con filtri":""}</div>
     <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>
-    ${delta}${budLine}
+    ${delta}${budLine}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
   </section>
+  ${J?vJoint(J):""}
   ${vChart()}
   ${cats.length?`<section class="block"><div class="bh"><h2>Per categoria</h2><button class="link" data-act="budget">${hasB?"Modifica budget":"Imposta budget"}</button></div>
     ${!budgetOn()&&hasB?`<p class="hint">Il budget è per tutta la famiglia: con il filtro per persona non lo mostro.</p>`:""}
@@ -802,9 +868,10 @@ function vHome(){
   ${pers.length?`<section class="block"><h2>Per beneficiario</h2>
     ${pers.map(([p,v])=>`<button class="row" data-act="filterp" data-p="${h(p)}"><i class="dot" style="background:var(--ink);opacity:.25"></i><span>${h(p)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/(tot||1)*100)}%</span></span></button>`).join("")}
   </section>`:""}
-  ${pays.length?`<section class="block"><h2>Sostenute da</h2>
+  ${fam&&pays.length?`<section class="block"><h2>Sostenute da</h2>
     ${pays.map(([p,v])=>`<button class="row" data-act="filterpb" data-p="${h(p)}"><i class="dot" style="background:var(--primary);opacity:.55"></i><span>${h(p)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/(tot||1)*100)}%</span></span></button>`).join("")}
   </section>`:""}
+  ${vSaldi()}
   ${vCardCheck()}
   <section class="block"><h2>Contanti</h2>
     <div class="cashgrid">
@@ -864,27 +931,117 @@ function showTip(col){
   tip.style.left=Math.max(0,Math.min(x,br.width-tip.offsetWidth))+"px";
 }
 
+// Controparte di un bonifico tra i vostri conti: stesso importo di segno opposto, entro 6 giorni (festività)
+function counterpart(t){
+  if(isVincolo(norm((t.x||"")+" "+(t.m||"")))||isCardText(t)) return null;
+  for(const o of S.all){
+    if(o===t||(t.acc&&o.acc===t.acc)) continue;
+    if(o.s===FLOWS.carta||o.s===CASH||o.k==="prelievo") continue;
+    if(isVincolo(norm((o.x||"")+" "+(o.m||"")))) continue;
+    if(Math.abs(o.a+t.a)<0.01&&dayDiff(o.d,t.d)<=6) return o;
+  }
+  return null;
+}
+// Pagina personale: soldi spostati verso conti comuni e altri conti vostri, raggruppati per destinazione
+function jointFlows(tx){
+  const groups={};
+  for(const t of tx){
+    if(t.k!=="giroconto"||t.s===FLOWS.carta) continue;
+    if(isCardText(t)||isVincolo(norm((t.x||"")+" "+(t.m||"")))) continue;
+    const c=counterpart(t),ca=c&&conti()[c.acc];
+    if(ca&&ca.pb===S.page) continue;
+    const name=ca?ca.n:(ownName(t.m||"")?"Altri conti vostri":"Altri giroconti");
+    const g=groups[name]=groups[name]||{name,joint:!!(ca&&ca.pb===JOINT),out:0,in:0};
+    if(t.a<0) g.out-=t.a; else g.in+=t.a;
+  }
+  const list=Object.values(groups).sort((a,b)=>(b.joint-a.joint)||(b.out-a.out));
+  return {groups:list,net:list.filter(g=>g.joint).reduce((x,g)=>x+g.out-g.in,0)};
+}
+function vJoint(J){
+  if(!J.groups.length) return "";
+  return `<section class="block"><h2>Conti comuni e giroconti</h2>
+    <p class="hint">Non sono spese: soldi spostati tra i vostri conti ${h(perIn())}.</p>
+    <div class="recon num"><span class="h">Conto</span><span class="h">Versato</span><span class="h">Ricevuto</span></div>
+    ${J.groups.map(g=>`<div class="recon num"><span>${h(g.name)}${g.joint?` <span class="hint" style="margin:0">· comune</span>`:""}</span><span>${eur(g.out)}</span><span>${eur(g.in)}</span></div>`).join("")}
+    ${J.groups.some(g=>g.joint)?`<label class="check"><input type="checkbox" id="inclgiro" ${S.inclGiro?"checked":""}><span>Conta tra le uscite il netto versato ai conti comuni: ${eur(J.net)}</span></label>`:`<div style="height:10px"></div>`}
+  </section>`;
+}
+
+// Saldi: un saldo noto (dalla banca o inserito a mano) e i movimenti importati danno il saldo a ogni data
+function periodEnd(){const e=S.per.to+"-"+String(lastDay(S.per.to)).padStart(2,"0");return e<today()?e:today()}
+function rollFrom(anchor,list,date,delta){
+  let v=anchor.v;
+  for(const t of list){const x=delta(t);if(!x)continue;if(date>=anchor.d){if(t.d>anchor.d&&t.d<=date)v+=x}else if(t.d>date&&t.d<=anchor.d)v-=x}
+  return Math.round(v*100)/100;
+}
+function accTx(id){return S.all.filter(t=>t.acc===id)}
+function balAt(id,date){const c=conti()[id];return c&&c.bal?rollFrom(c.bal,accTx(id),date,t=>t.a):null}
+function isVincMove(t){const x=norm((t.x||"")+" "+(t.m||""));return /(apertura|liquidazione) (linea )?vincolat|apertura vincolo|estinzione vincolo|svincolo/.test(x)&&!/interessi|bollo|imposta/.test(x)}
+function vincAt(id,date){const c=conti()[id];return c&&c.vinc?rollFrom(c.vinc,accTx(id),date,t=>isVincMove(t)?-t.a:0):null}
+// Carta: spese dopo l'ultimo estratto già addebitato
+function cardDebt(id,date){
+  let E=null;for(const t of ccOut()) if(isCardText(t)&&t.d<=date){const e=stmtOf(t);if(!E||e>E)E=e}
+  const from=E?cycleEnd(E,cardCut()):"0000-00-00";
+  return -sum(cardTx().filter(t=>t.acc===id&&t.d>from&&t.d<=date));
+}
+function bankCheck(id){
+  const c=conti()[id];if(!c||!c.bal||!c.bks||!c.bks.length) return null;
+  const res=c.bks.map(b=>({d:b.d,bank:b.v,calc:balAt(id,b.d)})).map(r=>({...r,diff:Math.round((r.calc-r.bank)*100)/100}));
+  const bad=res.filter(r=>Math.abs(r.diff)>0.01);
+  return {res,bad,last:res[res.length-1]};
+}
+function vSaldi(){
+  const list=contoList().filter(([,v])=>isFam()||v.pb===S.page);if(!list.length) return "";
+  const P=periodEnd();let liq=0,vin=0,lib=0,debt=0,miss=0;
+  const rows=list.map(([id,v])=>{
+    if(v.t==="carta"){const dbt=cardDebt(id,P);debt+=dbt;return `<div class="recon num"><span>${h(v.n)}</span><span>da addebitare</span><span>−${eur(dbt)}</span></div>`}
+    const b=balAt(id,P),chk=bankCheck(id),vi=vincAt(id,P);
+    if(b==null) miss++; else liq+=b;
+    if(vi!=null) vin+=vi;
+    if(v.lib&&v.lib.v) lib+=v.lib.v;
+    const st=b==null?`<span class="ko">saldo da impostare</span>`:!chk?`<span class="hint" style="margin:0">nessun saldo della banca</span>`:chk.bad.length?`<span class="ko">non torna: ${chk.bad.map(r=>(r.diff>0?"+":"−")+eur(Math.abs(r.diff))+" al "+ddmm(r.d)).join(", ")}</span>`:`<span class="ok">torna con la banca al ${ddmm(chk.last.d)}</span>`;
+    return `<div class="recon num"><span>${h(v.n)}</span><span>${st}</span><span>${b==null?"—":eur(b)}</span></div>
+      ${vi!=null?`<div class="recon num"><span class="hint" style="margin:0">${h(v.n)} · vincolato</span><span></span><span>${eur(vi)}</span></div>`:""}
+      ${v.lib&&v.lib.v?`<div class="recon num"><span class="hint" style="margin:0">${h(v.n)} · linea libera (inserita il ${ddmm(v.lib.d)})</span><span></span><span>${eur(v.lib.v)}</span></div>`:""}`;
+  }).join("");
+  const tot=liq+vin+lib;
+  return `<section class="block"><div class="bh"><h2>Conti e saldi al ${ddmm(P)}</h2><button class="link" data-act="settings">Imposta saldi</button></div>
+    <div class="recon num"><span class="h">Conto</span><span class="h">Verifica</span><span class="h">Saldo</span></div>
+    ${rows}
+    <div class="recon num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Liquidità sui conti</b></span><span></span><span><b>${eur(liq)}</b></span></div>
+    ${vin?`<div class="recon num"><span>Vincolato</span><span></span><span>${eur(vin)}</span></div>`:""}
+    ${lib?`<div class="recon num"><span>Linea libera</span><span></span><span>${eur(lib)}</span></div>`:""}
+    ${debt?`<div class="recon num"><span>Carte ancora da addebitare</span><span></span><span>−${eur(debt)}</span></div>`:""}
+    <div class="recon num"><span><b>Totale netto</b></span><span></span><span><b>${eur(tot-debt)}</b></span></div>
+    <p class="hint" style="padding-bottom:10px">${miss?`Per ${miss} ${miss===1?"conto manca":"conti mancano"} il saldo: si imposta da solo importando un estratto che lo riporta, oppure a mano nelle Impostazioni. `:""}“Torna” vuol dire che il saldo calcolato dai movimenti coincide con quello della banca: non manca niente.</p>
+  </section>`;
+}
+
 // Confronto tra addebiti della carta sul conto e spese dell'estratto carta del mese prima
 function vCardCheck(){
   const hasCard=S.all.some(t=>t.s===FLOWS.carta);
   const cut=cardCut();
   // una riga per estratto carta: l'addebito può arrivare il mese dopo o anche più tardi
-  const all=[];for(let ym=S.per.from;ym<=shiftYM(S.per.to,3);ym=shiftYM(ym,1)) all.push(...cardCharges(ym));
+  const all=[];for(let ym=S.per.from;ym<=shiftYM(S.per.to,3);ym=shiftYM(ym,1)) all.push(...cardCharges(ym).filter(inPage));
+  // nella pagina personale contano solo le carte di quella persona
+  const A=pageAccs(),myCards=contoList().filter(([k,v])=>v.t==="carta"&&(!A||A.has(k))).map(([k])=>k);
+  const spentE=E=>A?myCards.reduce((x,k)=>x+cardSpent(E,cut,k),0):cardSpent(E,cut);
   const rows=perMonths().map(m=>shiftYM(m,-1)).map(E=>{
     const list=all.filter(t=>stmtOf(t)===E),[from,to]=cardRange(E,cut);
     // dettaglio per carta, quando il numero finale nell'addebito corrisponde a un conto carta
     // senza numero associato, provo il conto carta le cui spese del ciclo coincidono con l'addebito
-    const cardAccs=contoList().filter(([,v])=>v.t==="carta").map(([k])=>k);
+    const cardAccs=myCards;
     const cards=list.map(t=>{const l4=cardLast4(t),E=stmtOf(t);let acc=cardContoOf(l4);
       if(!acc) acc=cardAccs.find(k=>Math.abs(cardSpent(E,cut,k)+t.a)<=1)||null;
       return {t,l4,acc,sp:acc?cardSpent(E,cut,acc):null}});
-    return {E,list,cards,from,to,ch:-sum(list),sp:cardSpent(E,cut)};
+    return {E,list,cards,from,to,ch:-sum(list),sp:spentE(E)};
   }).filter(r=>r.ch>0.004||r.sp>0.004);
-  const sus=perTx().filter(t=>t.s!==FLOWS.carta&&t.s!==CASH&&(t.k==="spesa"||t.k==="entrata")).map(t=>{
+  const sus=perTx().filter(inPage).filter(t=>t.s!==FLOWS.carta&&t.s!==CASH&&(t.k==="spesa"||t.k==="entrata")).map(t=>{
     const v=isVincolo(norm(t.x+" "+t.m));
     const c=!v&&t.s===FLOWS.cc&&t.k==="spesa"&&t.a<0?cardCharge(t.d,t.a):null;
     const w=v||c?null:ownTransfer(t.d,t.a,t.acc,flowOf(t));
-    return {t,why:v?(t.a<0?"Vincolo: soldi spostati sul conto vincolato":"Vincolo: capitale restituito alla scadenza"):c?"Addebito carta: "+c:w?"Trasferimento tra i vostri conti: "+w:null};
+    const o=v||c||w?null:ownName(t.m||"");
+    return {t,why:v?(t.a<0?"Vincolo: soldi spostati sul conto vincolato":"Vincolo: capitale restituito alla scadenza"):c?"Addebito carta: "+c:w?"Trasferimento tra i vostri conti: "+w:o?"Bonifico con un vostro conto: "+titleCase(o):null};
   }).filter(x=>x.why);
   if(!rows.length&&!sus.length) return "";
   return `<section class="block"><h2>Carta di credito e trasferimenti</h2>
@@ -913,7 +1070,7 @@ function txRow(t,showDate){
 }
 function vMovs(){
   const f=S.f,q=norm(f.q);
-  let list=q?S.all:perTx();
+  let list=(q?S.all:perTx()).filter(inPage);
   if(q) list=list.filter(t=>norm(t.m+" "+t.x+" "+(t.n||"")).includes(q));
   if(f.c) list=list.filter(t=>t.k==="spesa"&&(t.c||"altro")===f.c);
   if(f.p) list=list.filter(t=>t.p===f.p);
@@ -922,7 +1079,7 @@ function vMovs(){
   const byVal=S.msort==="importo";
   if(byVal) list=[...list].sort((x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
   const spent=-sum(list.filter(t=>t.k==="spesa"));
-  let html=`<div class="filters">
+  let html=`${pageSeg()}<div class="filters">
     <input type="search" id="fq" placeholder="Cerca esercente o descrizione" value="${h(f.q)}" aria-label="Cerca">
     <select id="fc" aria-label="Categoria"><option value="">Tutte le categorie</option>${CATS.map(([id,n])=>`<option value="${id}" ${f.c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
     <select id="fp" aria-label="Beneficiario"><option value="">Ogni beneficiario</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
@@ -1102,6 +1259,10 @@ function openSettings(){
       ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>{const n=S.all.filter(t=>t.acc===k).length;return `<div class="crow">
         <b>${h(v.n)}</b><span class="hint" style="margin:0">${n} ${n===1?"movimento":"movimenti"}</span>
         <div class="two" style="flex-basis:100%"><select data-ct="${h(k)}" aria-label="Tipo di ${h(v.n)}">${Object.entries(FLOWS).map(([f,fn])=>`<option value="${f}" ${v.t===f?"selected":""}>${h(fn)}</option>`).join("")}</select><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
+        ${v.t!=="carta"?`<details class="bald" style="flex-basis:100%"><summary class="link">${v.bal?`Saldo ${eur(v.bal.v)} al ${ddmm(v.bal.d)} (${v.bal.src==="banca"?"dalla banca":"inserito a mano"})`:"Imposta il saldo"}</summary>
+          <p class="hint">Un saldo a una data qualsiasi, anche di oggi: gli altri giorni li calcolo dai movimenti. Vincolato e linea libera servono solo per Widiba; lascia vuoto se non servono.</p>
+          ${[["bal","Saldo del conto"],["vinc","Vincolato"],["lib","Linea libera (non calcolata, solo da mostrare)"]].map(([f,lab])=>`<div class="lab" style="font-size:.85rem;margin-top:8px">${lab}</div><div class="two"><input type="date" id="${f}_d_${h(k)}" aria-label="${lab}: data" value="${h((v[f]&&v[f].d)||today())}"><input type="text" inputmode="decimal" id="${f}_v_${h(k)}" aria-label="${lab}: importo" placeholder="€" value="${v[f]?h(String(v[f].v).replace(".",",")):""}"></div>`).join("")}
+          <div class="btns" style="margin:10px 0 0"><button class="btn ghost" data-act="savebal" data-k="${h(k)}" ${S.canWrite?"":"disabled"}>Salva saldi</button></div></details>`:""}
         ${S.confirmClear===k?`<div class="banner" style="flex-basis:100%;margin:0">Eliminare tutti i ${n} movimenti importati da ${h(v.n)}? Il conto resta: poi puoi reimportare gli estratti.
           <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearconto" data-k="${h(k)}">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
         :`<div style="flex-basis:100%;display:flex;gap:16px">${n?`<button class="link" data-act="askclear" data-k="${h(k)}">Svuota il conto</button>`:""}<button class="link" data-act="delconto" data-k="${h(k)}" style="color:var(--danger)">Elimina il conto</button></div>`}
@@ -1109,6 +1270,9 @@ function openSettings(){
       ${legacy.length&&contoList().length?legacy.map(([src,n],i)=>{const ok=contoList().filter(([,v])=>FLOWS[v.t]===src);return `<p class="hint" style="margin-top:10px">${n} movimenti “${h(src)}” importati prima dei conti.${ok.length?" Assegnali a:":" Aggiungi un conto di questo tipo per assegnarli."}</p>${ok.length?`<div class="two"><select id="lg_${i}" aria-label="Conto per ${h(src)}">${ok.map(([k,v])=>`<option value="${k}">${h(v.n)}</option>`).join("")}</select><button class="btn ghost" data-act="assignleg" data-s="${h(src)}" data-i="${i}" ${S.canWrite?"":"disabled"}>Assegna</button></div>`:""}`}).join(""):""}
     </div>
     ${contoForm("sc")}
+    <div class="field"><label for="sown">Altri conti vostri che non importate (uno per riga)</label><textarea id="sown" style="min-height:70px">${h((S.settings.own||[]).join("\n"))}</textarea>
+      <p class="hint">I bonifici verso o da questi nomi sono giroconti, non spese o entrate. Gli intestatari dei conti importati (${h(contoList().map(([,v])=>v.holder).filter(Boolean).join(", ")||"nessuno ancora")}) li riconosco già.</p>
+      <div class="btns" style="margin:6px 0 0"><button class="btn ghost" data-act="saveown" ${S.canWrite?"":"disabled"}>Salva elenco</button></div></div>
     <div class="field"><div class="lab">Categorie aggiunte da voi</div>
       ${userCats.length?`<div class="rules">${userCats.map(([k,v])=>`<div><span><i class="dot" style="background:${v.c};display:inline-block;vertical-align:-1px;margin-right:6px"></i>${h(v.n)}</span><button class="link" data-act="delcat" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:""}
       <div class="two" style="margin-top:8px"><input type="text" id="ncat" placeholder="Nuova categoria" aria-label="Nome della nuova categoria"><button class="btn ghost" data-act="addcat" ${S.canWrite?"":"disabled"}>Aggiungi</button></div>
@@ -1202,6 +1366,22 @@ document.addEventListener("click",async e=>{
   if(act==="prevm"){shiftPer(-1);render()}
   else if(act==="nextm"){shiftPer(1);render()}
   else if(act==="period") openPeriod();
+  else if(act==="page"){S.page=el.dataset.p;try{localStorage.setItem("sf-page",S.page)}catch(_){}S.hf.pb="";render()}
+  else if(act==="savebal"){
+    const k=el.dataset.k,c=conti()[k];if(!c)return;const v={...c};
+    for(const [f,lab] of [["bal","Saldo"],["vinc","Vincolato"],["lib","Linea libera"]]){
+      const de=$("#"+f+"_d_"+k),ve=$("#"+f+"_v_"+k);if(!de||!ve)continue;
+      const n=num(ve.value);
+      if(ve.value.trim()===""){if(f!=="bal")delete v[f];continue}
+      if(isNaN(n)||!de.value){toast(lab+": inserisci data e importo.");return}
+      v[f]={d:de.value,v:Math.round(n*100)/100,src:"manuale"};
+    }
+    try{await saveSettings({conti:{[k]:{...v,vinc:v.vinc||null,lib:v.lib||null}}});S.settings.conti={...conti(),[k]:v};toast("Saldi salvati");openSettings()}catch(err){toast(errMsg(err))}
+  }
+  else if(act==="saveown"){
+    const list=[...new Set($("#sown").value.split("\n").map(x=>x.trim()).filter(Boolean))];
+    try{await saveSettings({own:list});S.settings.own=list;toast("Elenco salvato")}catch(err){toast(errMsg(err))}
+  }
   else if(act==="setper"){S.per={from:el.dataset.f,to:el.dataset.t};closeSheet();render()}
   else if(act==="applyper"){let a=$("#pf").value,b=$("#pt").value;if(a>b)[a,b]=[b,a];S.per={from:a,to:b};closeSheet();render()}
   else if(act==="budget") openBudget();
@@ -1320,6 +1500,7 @@ document.addEventListener("change",async e=>{
     try{await saveSettings({conti:{[id2]:v}});S.settings.conti={...conti(),[id2]:v};if(upd.length)await putTx(upd);toast(upd.length?`Intestatario aggiornato anche su ${upd.length} ${upd.length===1?"movimento":"movimenti"}`:"Intestatario aggiornato")}catch(err){toast(errMsg(err))}
     return;
   }
+  if(id==="inclgiro"){S.inclGiro=t.checked;render();return}
   if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
   if(id==="cd"&&S.cash){S.cash.d=t.value;return}
   const I=S.imp;if(!I) return;
