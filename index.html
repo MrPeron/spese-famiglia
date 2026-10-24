@@ -217,6 +217,9 @@ textarea{min-height:110px;resize:vertical}
 .bud label:first-child{border-top:0}
 .bud small{display:block;color:var(--muted);font-size:.78rem}
 .bud input{min-height:40px;text-align:right}
+.catlist{display:grid;gap:6px}
+.catlist>div{display:grid;grid-template-columns:12px 1fr 24px;gap:10px;align-items:center}
+.catlist input{min-height:40px;padding:6px 10px}
 .rules .crow{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;padding:12px}
 .crow select{min-height:38px;padding:6px 8px;font-size:15px}
 .bald summary{list-style:none;cursor:pointer;font-size:.9rem}
@@ -256,7 +259,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "13 · 24/10/2026";
+const APP_VERSION = "14 · 24/10/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -274,8 +277,10 @@ const BASE_CATS = [
 const EXTRA_COLORS = ["#7A4E9C","#3F7F6B","#B5651D","#5D6D7E","#A0522D","#2E86AB","#8E7DBE","#C08497","#6B8E23","#B8860B"];
 const CATS = [], CAT = {};
 function rebuildCats(){
+  // nomi delle categorie di base rinominate dalla famiglia
+  const ren=(S&&S.settings&&S.settings.catNames)||{},base=BASE_CATS.map(([id,n,c])=>[id,ren[id]||n,c]);
   const extra=Object.entries((S&&S.settings&&S.settings.cats)||{}).filter(([,v])=>v&&v.n).map(([id,v])=>[id,v.n,v.c]).sort((a,b)=>a[1].localeCompare(b[1]));
-  CATS.length=0;CATS.push(...BASE_CATS.filter(c=>c[0]!=="altro"),...extra,...BASE_CATS.filter(c=>c[0]==="altro"));
+  CATS.length=0;CATS.push(...base.filter(c=>c[0]!=="altro"),...extra,...base.filter(c=>c[0]==="altro"));
   for(const k in CAT) delete CAT[k];
   for(const [id,n,c] of CATS) CAT[id]={n,c};
 }
@@ -1261,7 +1266,7 @@ function openSettings(){
   S.sheet={type:"settings"};
   const rules=Object.entries(S.settings.rules||{}).filter(([,v])=>v&&v.c).sort((a,b)=>a[0].localeCompare(b[0]));
   const lc={};for(const t of S.all) if(t.s!==CASH&&!conti()[t.acc]) lc[t.s]=(lc[t.s]||0)+1;
-  const legacy=Object.entries(lc),userCats=Object.entries(S.settings.cats||{}).filter(([,v])=>v&&v.n);
+  const legacy=Object.entries(lc);
   openSheet(`<h3>Impostazioni</h3><div class="sub">Valgono per tutta la famiglia. · Versione ${h(APP_VERSION)}</div>
     <div class="field"><label for="smem">Beneficiari delle spese (uno per riga)</label><textarea id="smem">${h(members().join("\n"))}</textarea><p class="hint">“Famiglia” è per le spese comuni.</p></div>
     <div class="field"><label for="spay">Chi sostiene le spese (uno per riga)</label><textarea id="spay" style="min-height:70px">${h(payers().join("\n"))}</textarea></div>
@@ -1288,8 +1293,10 @@ function openSettings(){
     <div class="field"><label for="sown">Altri conti vostri che non importate (uno per riga)</label><textarea id="sown" style="min-height:70px">${h((S.settings.own||[]).join("\n"))}</textarea>
       <p class="hint">I bonifici verso o da questi nomi sono giroconti, non spese o entrate. Gli intestatari dei conti importati (${h(contoList().map(([,v])=>v.holder).filter(Boolean).join(", ")||"nessuno ancora")}) li riconosco già.</p>
       <div class="btns" style="margin:6px 0 0"><button class="btn ghost" data-act="saveown" ${S.canWrite?"":"disabled"}>Salva elenco</button></div></div>
-    <div class="field"><div class="lab">Categorie aggiunte da voi</div>
-      ${userCats.length?`<div class="rules">${userCats.map(([k,v])=>`<div><span><i class="dot" style="background:${v.c};display:inline-block;vertical-align:-1px;margin-right:6px"></i>${h(v.n)}</span><button class="link" data-act="delcat" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:""}
+    <div class="field"><div class="lab">Categorie</div>
+      <div class="catlist">${CATS.map(([id,n,c])=>{const own=!!(S.settings.cats||{})[id];return `<div><i class="dot" style="background:${c}"></i><input type="text" data-cn="${h(id)}" value="${h(n)}" aria-label="Nome della categoria ${h(n)}">${own?`<button class="link" data-act="delcat" data-k="${h(id)}" aria-label="Elimina ${h(n)}" style="color:var(--danger)">×</button>`:`<span></span>`}</div>`}).join("")}</div>
+      <div class="btns" style="margin:8px 0 0"><button class="btn ghost" data-act="savecatnames" ${S.canWrite?"":"disabled"}>Salva nomi</button></div>
+      <p class="hint">Cambiando il nome, movimenti, regole e budget restano collegati alla stessa categoria. Si possono eliminare solo le categorie aggiunte da voi.</p>
       <div class="two" style="margin-top:8px"><input type="text" id="ncat" placeholder="Nuova categoria" aria-label="Nome della nuova categoria"><button class="btn ghost" data-act="addcat" ${S.canWrite?"":"disabled"}>Aggiungi</button></div>
       <p class="hint">Se elimini una categoria, i movimenti che la usavano finiscono in “Altro”.</p>
     </div>
@@ -1453,6 +1460,20 @@ document.addEventListener("click",async e=>{
     const used=new Set(CATS.map(c=>c[2])),c=EXTRA_COLORS.find(x=>!used.has(x))||EXTRA_COLORS[CATS.length%EXTRA_COLORS.length];
     const id="u"+hash(norm(n)).slice(0,8);
     try{await saveSettings({cats:{[id]:{n,c}}});S.settings.cats={...(S.settings.cats||{}),[id]:{n,c}};rebuildCats();toast("Categoria aggiunta");openSettings()}catch(err){toast(errMsg(err))}
+  }
+  else if(act==="savecatnames"){
+    const ren={},cats={},names=new Set();
+    for(const i of document.querySelectorAll("[data-cn]")){
+      const id=i.dataset.cn,n=i.value.trim();if(!n){toast("Ogni categoria deve avere un nome.");i.focus();return}
+      if(names.has(norm(n))){toast("Due categorie hanno lo stesso nome: "+n);i.focus();return}names.add(norm(n));
+      const own=(S.settings.cats||{})[id];
+      if(own){if(own.n!==n)cats[id]={...own,n}}
+      else{const def=(BASE_CATS.find(b=>b[0]===id)||[])[1];ren[id]=n===def?null:n}
+    }
+    try{await saveSettings({catNames:ren,...(Object.keys(cats).length?{cats}:{})});
+      const cur={...(S.settings.catNames||{})};for(const [k,v] of Object.entries(ren)){if(v)cur[k]=v;else delete cur[k]}S.settings.catNames=cur;
+      S.settings.cats={...(S.settings.cats||{}),...cats};rebuildCats();toast("Nomi delle categorie salvati");openSettings()}
+    catch(err){toast(errMsg(err))}
   }
   else if(act==="delcat"){const id=el.dataset.k;try{await saveSettings({cats:{[id]:null}});const c={...(S.settings.cats||{})};delete c[id];S.settings.cats=c;rebuildCats();openSettings()}catch(err){toast(errMsg(err))}}
   else if(act==="savecash"){
