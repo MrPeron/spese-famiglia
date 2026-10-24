@@ -255,6 +255,8 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordRe
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, setDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 (() => {
 "use strict";
+// Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
+const APP_VERSION = "13 · 24/10/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1260,7 +1262,7 @@ function openSettings(){
   const rules=Object.entries(S.settings.rules||{}).filter(([,v])=>v&&v.c).sort((a,b)=>a[0].localeCompare(b[0]));
   const lc={};for(const t of S.all) if(t.s!==CASH&&!conti()[t.acc]) lc[t.s]=(lc[t.s]||0)+1;
   const legacy=Object.entries(lc),userCats=Object.entries(S.settings.cats||{}).filter(([,v])=>v&&v.n);
-  openSheet(`<h3>Impostazioni</h3><div class="sub">Valgono per tutta la famiglia.</div>
+  openSheet(`<h3>Impostazioni</h3><div class="sub">Valgono per tutta la famiglia. · Versione ${h(APP_VERSION)}</div>
     <div class="field"><label for="smem">Beneficiari delle spese (uno per riga)</label><textarea id="smem">${h(members().join("\n"))}</textarea><p class="hint">“Famiglia” è per le spese comuni.</p></div>
     <div class="field"><label for="spay">Chi sostiene le spese (uno per riga)</label><textarea id="spay" style="min-height:70px">${h(payers().join("\n"))}</textarea></div>
     <div class="btns"><button class="btn" data-act="savesettings" ${S.canWrite?"":"disabled"}>Salva impostazioni</button></div>
@@ -1362,7 +1364,7 @@ function render(){
   $("#mlabel").textContent=perLabel();
   $("#monthbox").style.visibility=S.view==="imp"?"hidden":"visible";
   document.querySelectorAll("nav.tabs [data-nav]").forEach(b=>b.setAttribute("aria-current",b.dataset.nav===S.view?"page":"false"));
-  const banner="";
+  const banner=S.newVer?`<div class="banner" style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between"><span>È disponibile una nuova versione (${h(S.newVer)}).</span><button class="btn" data-act="reload" style="padding:8px 14px">Aggiorna</button></div>`:"";
   const v={home:vHome,movs:vMovs,cash:vCash,imp:vImp}[S.view]||vHome;
   $("#view").innerHTML=banner+v();
 }
@@ -1379,6 +1381,7 @@ document.addEventListener("click",async e=>{
   if(act==="prevm"){shiftPer(-1);render()}
   else if(act==="nextm"){shiftPer(1);render()}
   else if(act==="period") openPeriod();
+  else if(act==="reload"){location.reload()}
   else if(act==="page"){S.page=el.dataset.p;try{localStorage.setItem("sf-page",S.page)}catch(_){}S.hf.pb="";render()}
   else if(act==="savebal"){
     const k=el.dataset.k,c=conti()[k];if(!c)return;const v={...c};
@@ -1552,6 +1555,14 @@ document.addEventListener("mouseout",e=>{const box=$("#chart");if(box&&box.conta
 
 // ---------- Avvio ----------
 render();
+// Controllo aggiornamenti: legge la pagina online senza cache e confronta il numero di versione
+async function checkVersion(){
+  try{const txt=await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"");
+    const m=txt.match(/const APP_VERSION = "([^"]+)"/);
+    if(m&&m[1]!==APP_VERSION&&S.newVer!==m[1]){S.newVer=m[1];render()}}catch(e){}
+}
+checkVersion();
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")checkVersion()});
 (function start(){
   const cfg=window.FIREBASE_CONFIG;
   if(!cfg||!cfg.apiKey||/INSERISCI/.test(cfg.apiKey)){S.authed=false;document.querySelector("nav.tabs").style.display="none";$("#view").innerHTML=`<p class="banner" style="margin-top:24px">Manca la configurazione: compila config.js con i dati del progetto Firebase (vedi LEGGIMI.md).</p>`;return}
