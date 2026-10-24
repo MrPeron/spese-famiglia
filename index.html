@@ -243,10 +243,10 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 const CASH = "Contanti";
-const CATS = [
+const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
   ["auto","Auto e carburante","#5B6C8F"],["trasporti","Trasporti e pedaggi","#3B7EA1"],
-  ["casa","Casa e utenze","#8A6D3B"],["arredo","Arredo e fai da te","#A88A5C"],
+  ["casa","Casa e utenze","#8A6D3B"],["mutuo","Mutuo e prestiti","#2C5F7C"],["arredo","Arredo e fai da te","#A88A5C"],
   ["salute","Salute e farmacia","#C0504D"],["abbigliamento","Abbigliamento","#9B5DA8"],
   ["figli","Figli e scuola","#D9A21F"],["sport","Sport","#2F9C95"],["bellezza","Bellezza","#C46FA6"],
   ["svago","Svago e cultura","#D45D8C"],["viaggi","Viaggi e vacanze","#4A90C2"],
@@ -255,13 +255,22 @@ const CATS = [
   ["animali","Animali","#8C9B3E"],["banca","Banca, tasse, assicurazioni","#6F7672"],
   ["altro","Altro","#9AA39E"]
 ];
-const CAT = Object.fromEntries(CATS.map(([id,n,c]) => [id,{n,c}]));
+// Categorie aggiunte dalla famiglia (Impostazioni): stanno prima di "Altro"
+const EXTRA_COLORS = ["#7A4E9C","#3F7F6B","#B5651D","#5D6D7E","#A0522D","#2E86AB","#8E7DBE","#C08497","#6B8E23","#B8860B"];
+const CATS = [], CAT = {};
+function rebuildCats(){
+  const extra=Object.entries((S&&S.settings&&S.settings.cats)||{}).filter(([,v])=>v&&v.n).map(([id,v])=>[id,v.n,v.c]).sort((a,b)=>a[1].localeCompare(b[1]));
+  CATS.length=0;CATS.push(...BASE_CATS.filter(c=>c[0]!=="altro"),...extra,...BASE_CATS.filter(c=>c[0]==="altro"));
+  for(const k in CAT) delete CAT[k];
+  for(const [id,n,c] of CATS) CAT[id]={n,c};
+}
 const KINDS = {spesa:"Spesa", prelievo:"Prelievo contanti", entrata:"Entrata", giroconto:"Giroconto / addebito carta"};
-const DEFAULTS = {members:["Famiglia","Federica","Alessandro","Martino","Ludovica"], payers:["Alessandro","Federica"], rules:{}, formats:{}, accounts:{}, budgets:{}};
-const FLOWS = {cc:"Conto corrente", carta:"Carta di credito"};
+const DEFAULTS = {members:["Famiglia","Federica","Alessandro","Martino","Ludovica"], payers:["Alessandro","Federica"], rules:{}, formats:{}, accounts:{}, budgets:{}, conti:{}, acctok:{}, cats:{}};
+const FLOWS = {cc:"Conto corrente", carta:"Carta di credito", ris:"Conto risparmio"};
 
 // Dizionario di partenza (ordine = priorità)
 const DICT = [
+  ["mutuo","mutuo|finanziament|prestito personale|leasing|cessione del quinto|agos|findomestic|compass|cofidis|santander consumer"],
   ["abbonamenti","netflix|spotify|disney|dazn|prime video|amazon prime|apple\\.com|itunes|google play|youtube|sky\\b|now tv|nowtv|audible|icloud|openai|chatgpt|anthropic|microsoft|adobe|dropbox|timvision|infinity|paramount"],
   ["online","amazon|amzn|ebay|aliexpress|temu|shein|etsy|wish\\.com"],
   ["banca","commission|canone|imposta di bollo|bollo|f24|agenzia (delle )?entrate|pagopa|assicuraz|generali|allianz|unipol|axa|zurich|reale mutua|interessi|spese tenuta|tari\\b|inps"],
@@ -295,6 +304,7 @@ const S = {
   view:"home", per:{from:ymOf(today()),to:ymOf(today())}, hf:{p:"",pb:"",c:""}, f:{q:"",c:"",p:"",s:"",pb:""}, msort:"data",
   cash:null, imp:null, dirty:false, names:{}
 };
+rebuildCats();
 
 // ---------- Utilità ----------
 function clone(o){return JSON.parse(JSON.stringify(o))}
@@ -316,8 +326,11 @@ function sum(list){return list.reduce((t,x)=>t+(x.a||0),0)}
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove("on"),2600)}
 function catDot(c){const k=CAT[c]||CAT.altro;return `<i class="dot" style="background:${k.c}"></i>`}
 function members(){return S.settings.members&&S.settings.members.length?S.settings.members:DEFAULTS.members}
-function sources(){return [FLOWS.cc,FLOWS.carta,CASH]}
-function cardSources(){return [FLOWS.cc,FLOWS.carta]}
+function conti(){return S.settings.conti||{}}
+function contoList(){return Object.entries(conti()).filter(([,v])=>v&&v.n).sort((a,b)=>a[1].n.localeCompare(b[1].n))}
+function srcName(t){const c=t.acc&&conti()[t.acc];return c&&c.n?c.n:(t.s||"")}
+function flowOf(t){return Object.keys(FLOWS).find(k=>FLOWS[k]===t.s)||"cc"}
+function sources(){return [...new Set([...contoList().map(([,v])=>v.n),...S.all.map(srcName).filter(Boolean),CASH])]}
 function payers(){return S.settings.payers&&S.settings.payers.length?S.settings.payers:DEFAULTS.payers}
 function devPayer(){try{const p=localStorage.getItem("sf-payer");return payers().includes(p)?p:payers()[0]}catch(e){return payers()[0]}}
 function setDevPayer(p){try{localStorage.setItem("sf-payer",p)}catch(e){}}
@@ -355,6 +368,16 @@ function cardCharge(d,a){
   if(net>1&&Math.abs(net-amt)<=0.5) return "pari alle spese con la carta di "+monthName(pm);
   return null;
 }
+// Bonifico tra i vostri conti: stesso importo uscito da un conto ed entrato in un altro entro 4 giorni
+function ownTransfer(d,a,acc,flow){
+  if(flow==="carta") return null;
+  for(const t of S.all){
+    if(t.s===FLOWS.carta||t.s===CASH||t.k==="prelievo") continue;
+    if(acc?t.acc===acc:(!t.acc&&t.s===FLOWS[flow])) continue;
+    if(Math.abs(t.a+a)<0.01&&dayDiff(t.d,d)<=4) return (a<0?"entrato lo stesso importo su ":"uscito lo stesso importo da ")+srcName(t)+" il "+ddmm(t.d);
+  }
+  return null;
+}
 
 function mkey(m){return norm(m).replace(/[^a-z0-9 &]/g," ").split(" ").filter(w=>w.length>1).slice(0,2).join(" ")}
 function extractMerchant(desc){
@@ -373,6 +396,11 @@ function extractMerchant(desc){
 }
 function detectKind(desc,a,flow){
   const t=norm(desc);
+  if(flow==="ris"){
+    if(a<0&&/(bollo|imposta|ritenut|commission|canone|spese)/.test(t)) return "spesa";
+    if(a>0&&/(interess|cedol|premio|rendiment)/.test(t)) return "entrata";
+    return "giroconto";
+  }
   if(flow==="carta"){
     if(RE_SALDO.test(t)||RE_GIRO.test(t)) return "giroconto";
     if(a<0&&RE_PREL.test(" "+t)) return "prelievo";
@@ -402,7 +430,7 @@ function rebuild(){
   out.sort((a,b)=>b.d.localeCompare(a.d)||(b.t||0)-(a.t||0));
   S.all=out; S.byId=Object.fromEntries(out.map(t=>[t.id,t]));
 }
-function cleanTx(t){const o={};for(const k of ["d","a","m","x","c","p","pb","s","k","n","by","t","cb","f"]) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k];return o}
+function cleanTx(t){const o={};for(const k of ["d","a","m","x","c","p","pb","s","acc","k","n","by","t","cb","f"]) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k];return o}
 
 async function putTx(list){
   const by={};
@@ -524,15 +552,18 @@ async function handleFile(file){
       found={hdr:Math.max(r,0),map:{d:-1,x1:-1,x2:-1,a:-1,deb:-1,cre:-1}};
     }
     const cols=(grid[found.hdr]||[]).map((c,i)=>String(c).trim()||("Colonna "+(i+1)));
-    const flow=S.impFlow||"cc";
+    const toks=idTokens(grid,found.hdr),acc=S.settings.accounts||{},at=S.settings.acctok||{};
+    let conto=conti()[S.impAcc]?S.impAcc:null,payer=null,payerBy="";
+    for(const t of toks) if(at[t]&&conti()[at[t]]){if(at[t]!==conto){conto=at[t];payerBy="Conto riconosciuto dal file: "+conti()[conto].n}break}
+    if(!conto){toast("Scegli prima il conto da cui arriva l’estratto.");return}
+    const flow=conti()[conto].t||"cc";
     const sig=sigOf(cols,flow);
     const saved=S.settings.formats&&S.settings.formats[sig];
-    const toks=idTokens(grid,found.hdr),acc=S.settings.accounts||{};
-    let payer=null,payerBy="";
-    for(const t of toks) if(acc[t]&&payers().includes(acc[t])){payer=acc[t];payerBy=t.startsWith("iban")?"Riconosciuto dall’IBAN nel file":"Riconosciuto dal numero di carta";break}
+    if(conti()[conto].pb&&payers().includes(conti()[conto].pb)) payer=conti()[conto].pb;
+    if(!payer) for(const t of toks) if(acc[t]&&payers().includes(acc[t])){payer=acc[t];payerBy=t.startsWith("iban")?"Riconosciuto dall’IBAN nel file":"Riconosciuto dal numero di carta";break}
     if(!payer&&saved&&saved.pb&&payers().includes(saved.pb)){payer=saved.pb;payerBy="Come l’ultimo file con questo formato"}
-    if(!payer) payer=S.impPayer||devPayer();
-    S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,x1:saved.x1,x2:saved.x2,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
+    if(!payer) payer=devPayer();
+    S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,x1:saved.x1,x2:saved.x2,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
       invert:saved?!!saved.inv:false,person:members()[0],edits:{},rows:[],ai:null,remembered:!!saved,showMap:!saved&&(found.map.d<0)};
     if(!saved&&S.imp.map.a>=0){
       let pos=0,tot=0;const xi=S.imp.map.x1;
@@ -559,8 +590,9 @@ function buildRows(){
     const rk=base+"|"+seen[base];
     const id="b"+hash(rk+"|"+I.payer);
     let k=detectKind(desc,a,I.flow),gw=null;
-    if(I.flow==="cc"&&k==="spesa"&&a<0){gw=cardCharge(d,a);if(gw)k="giroconto"}
-    const tx={id,rk,d,a,x:desc,m:extractMerchant(desc),k,s:FLOWS[I.flow],p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
+    if(I.flow==="cc"&&k==="spesa"&&a<0){const w=cardCharge(d,a);if(w){k="giroconto";gw="Addebito carta: "+w}}
+    if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownTransfer(d,a,I.acc,I.flow);if(w){k="giroconto";gw="Trasferimento tra i vostri conti: "+w}}
+    const tx={id,rk,d,a,x:desc,m:extractMerchant(desc),k,s:FLOWS[I.flow],acc:I.acc||undefined,p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
     if(k==="spesa"){const ac=autoCat(tx);if(ac){tx.c=ac.c;if(ac.p)tx.p=ac.p;tx.cb=ac.by}}
     const e=I.edits[rk];if(e)Object.assign(tx,e);
     tx.dup=!!S.byId[id];
@@ -643,7 +675,7 @@ async function saveImport(){
     await putTx(list);
     const patch={formats:{[I.sig]:{d:I.map.d,x1:I.map.x1,x2:I.map.x2,a:I.map.a,deb:I.map.deb,cre:I.map.cre,inv:I.invert,pb:I.payer}}};
     if(Object.keys(learn).length) patch.rules=learn;
-    if(I.toks&&I.toks.length){patch.accounts={};for(const t of I.toks) patch.accounts[t]=I.payer}
+    if(I.toks&&I.toks.length){patch.accounts={};patch.acctok={};for(const t of I.toks){patch.accounts[t]=I.payer;if(I.acc)patch.acctok[t]=I.acc}}
     await saveSettings(patch);
     const latest=list.map(t=>t.d).sort().pop();
     S.imp=null;showMonth(ymOf(latest));S.view="movs";render();
@@ -739,7 +771,7 @@ function vChart(){
   if(!sp.length) return "";
   const tot={};sp.forEach(t=>{const c=t.c||"altro";tot[c]=(tot[c]||0)-t.a});
   const ranked=Object.entries(tot).filter(([,v])=>v>0.004).sort((a,b)=>b[1]-a[1]).map(([c])=>c);
-  const fold=ranked.length>7,keys=fold?[...ranked.slice(0,6),"_rest"]:ranked;
+  const fold=ranked.length>7,keys=fold?[...ranked.filter(c=>c!=="altro").slice(0,6),"_rest"]:ranked;
   const color=k=>k==="_rest"?"var(--muted)":(CAT[k]||CAT.altro).c;
   const name=k=>k==="_rest"?"Altre categorie":(CAT[k]||CAT.altro).n;
   const cols=ms.map(ym=>{const seg={};let t=0;for(const x of sp) if(ymOf(x.d)===ym){const c=x.c||"altro",k=keys.includes(c)?c:"_rest";seg[k]=(seg[k]||0)-x.a;t-=x.a}
@@ -781,11 +813,15 @@ function vCardCheck(){
   const hasCard=S.all.some(t=>t.s===FLOWS.carta);
   const charged=ym=>-sum(S.all.filter(t=>t.s===FLOWS.cc&&t.k==="giroconto"&&ymOf(t.d)===ym&&t.a<0));
   const rows=perMonths().map(ym=>({ym,ch:charged(ym),sp:cardNet(shiftYM(ym,-1))})).filter(r=>r.ch>0.004||r.sp>0.004);
-  const sus=perTx().filter(t=>t.s===FLOWS.cc&&t.k==="spesa"&&t.a<0).map(t=>({t,why:cardCharge(t.d,t.a)})).filter(x=>x.why);
+  const sus=perTx().filter(t=>t.s!==FLOWS.carta&&t.s!==CASH&&(t.k==="spesa"||t.k==="entrata")).map(t=>{
+    const c=t.s===FLOWS.cc&&t.k==="spesa"&&t.a<0?cardCharge(t.d,t.a):null;
+    const w=c?null:ownTransfer(t.d,t.a,t.acc,flowOf(t));
+    return {t,why:c?"Addebito carta: "+c:w?"Trasferimento tra i vostri conti: "+w:null};
+  }).filter(x=>x.why);
   if(!rows.length&&!sus.length) return "";
-  return `<section class="block"><h2>Carta di credito</h2>
-    ${sus.length?`<p class="banner">Questi movimenti del conto sembrano l’addebito della carta, ma contano come spesa: le singole spese sono già nell’estratto carta, quindi verrebbero contate due volte.</p>
-      ${sus.map(({t,why})=>`<div class="rules" style="margin-bottom:8px"><div><span><b>${h(t.m)}</b> · ${ddmm(t.d)}<br><span class="hint">${h(why)}</span></span><span class="num" style="white-space:nowrap">${eur(-t.a)}</span></div><div><button class="link" data-act="mkgiro" data-id="${h(t.id)}" ${S.canWrite?"":"disabled"}>Segna come addebito carta</button></div></div>`).join("")}`:""}
+  return `<section class="block"><h2>Carta di credito e trasferimenti</h2>
+    ${sus.length?`<p class="banner">Questi movimenti sembrano l’addebito della carta o uno spostamento tra i vostri conti, ma contano come spesa o entrata. Così verrebbero contati due volte.</p>
+      ${sus.map(({t,why})=>`<div class="rules" style="margin-bottom:8px"><div><span><b>${h(t.m)}</b> · ${ddmm(t.d)}<br><span class="hint">${h(why)}</span></span><span class="num" style="white-space:nowrap">${t.a>0?"+":"−"}${eur(Math.abs(t.a))}</span></div><div><span class="hint" style="margin:0">${h(srcName(t))}</span><button class="link" data-act="mkgiro" data-id="${h(t.id)}" ${S.canWrite?"":"disabled"}>Segna come giroconto</button></div></div>`).join("")}`:""}
     ${rows.length?`<div class="recon num">
       <span class="h">Addebito sul conto</span><span class="h">Spese carta mese prima</span><span class="h">Esito</span>
       ${rows.map(r=>{const d=r.ch-r.sp,ok=Math.abs(d)<=1;return `<span>${h(monthName(r.ym))} · ${eur(r.ch)}</span><span>${eur(r.sp)}</span><span class="${ok?"ok":"ko"}">${ok?"Torna":(d>0?"+":"−")+eur(Math.abs(d))}</span>`}).join("")}
@@ -802,7 +838,7 @@ function txRow(t,showDate){
   return `<button class="tx" data-act="edit" data-id="${h(t.id)}">
     <span class="m">${h(t.m||t.x||"Movimento")}</span><span class="a num ${amtCls}">${sign}${eur(Math.abs(t.a))}</span>
     <span class="meta">${k==="spesa"?`<span class="tag">${catDot(t.c)}${h((CAT[t.c]||CAT.altro).n)}</span>`:`<span class="tag">${h(KINDS[k])}</span>`}
-      ${k==="spesa"&&t.p?`<span>per ${h(t.p)}</span>`:""}${t.pb&&(k==="spesa"||k==="prelievo")?`<span>${k==="prelievo"?"prelevati da":"pagata da"} ${h(t.pb)}</span>`:""}<span>${h(t.s===CASH?"contanti":(t.s||""))}</span>${showDate?`<span class="num">${ddmm(t.d)}</span>`:""}${low?`<span class="flag">da verificare</span>`:""}</span>
+      ${k==="spesa"&&t.p?`<span>per ${h(t.p)}</span>`:""}${t.pb&&(k==="spesa"||k==="prelievo")?`<span>${k==="prelievo"?"prelevati da":"pagata da"} ${h(t.pb)}</span>`:""}<span>${h(t.s===CASH?"contanti":srcName(t))}</span>${showDate?`<span class="num">${ddmm(t.d)}</span>`:""}${low?`<span class="flag">da verificare</span>`:""}</span>
   </button>`;
 }
 function vMovs(){
@@ -811,7 +847,7 @@ function vMovs(){
   if(q) list=list.filter(t=>norm(t.m+" "+t.x+" "+(t.n||"")).includes(q));
   if(f.c) list=list.filter(t=>t.k==="spesa"&&(t.c||"altro")===f.c);
   if(f.p) list=list.filter(t=>t.p===f.p);
-  if(f.s) list=list.filter(t=>t.s===f.s);
+  if(f.s) list=list.filter(t=>srcName(t)===f.s);
   if(f.pb) list=list.filter(t=>t.pb===f.pb);
   const byVal=S.msort==="importo";
   if(byVal) list=[...list].sort((x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
@@ -869,14 +905,17 @@ function vCash(){
 function vImp(){
   const I=S.imp;
   const drop=`<label class="drop" id="drop"><input type="file" id="file" accept=".csv,.txt,.xlsx,.xls,.xlsm,.ods,text/csv"><b>${I?"Carica un altro file":"Scegli l’estratto conto"}</b><span class="hint">Excel (.xlsx, .xls) o CSV esportato dall’home banking</span></label>`;
-  const flowSeg=f=>`<div class="seg" role="group" aria-label="Tipo di estratto" style="display:grid;width:100%"><button data-act="flow" data-f="cc" aria-pressed="${f==="cc"}">Conto corrente</button><button data-act="flow" data-f="carta" aria-pressed="${f==="carta"}">Carta di credito</button></div>`;
-  if(!I){const f=S.impFlow||"cc";const pb=S.impPayer||devPayer();return `<section style="padding-top:6px">
+  const accSel=(id,sel,empty)=>`<select id="${id}">${empty?`<option value="">Scegli il conto…</option>`:""}${contoList().map(([k,v])=>`<option value="${k}" ${sel===k?"selected":""}>${h(v.n)} · ${h(FLOWS[v.t]||"")}</option>`).join("")}${empty?`<option value="__new">＋ Aggiungi un conto</option>`:""}</select>`;
+  if(!I){
+    const list=contoList(),sel=conti()[S.impAcc]?S.impAcc:"",c=sel?conti()[sel]:null;
+    const tips={cc:"Lista movimenti del conto: pagamenti bancomat, prelievi, bonifici, addebiti. L’addebito mensile della carta di credito e i bonifici tra i vostri conti non contano come spesa.",
+      carta:"Movimenti della carta di credito: le singole spese, con i rimborsi che riducono la categoria. Il pagamento del saldo viene escluso.",
+      ris:"Conto deposito o di risparmio: i trasferimenti da e verso i vostri conti non contano come spese o entrate. Gli interessi sono entrate, bolli e imposte sono spese."};
+    return `<section style="padding-top:6px">
     <h2 style="font:800 1.5rem/1.2 var(--display);margin:8px 0">Importa movimenti</h2>
-    ${flowSeg(f)}
-    <p class="hint">${f==="cc"?"Lista movimenti del conto: pagamenti bancomat, prelievi, bonifici, addebiti. L’addebito mensile della carta di credito viene riconosciuto come giroconto e non conta come spesa, perché le singole spese arrivano dall’estratto della carta.":"Movimenti della carta di credito: le singole spese, con i rimborsi che riducono la categoria. Il pagamento del saldo viene escluso."}</p>
-    <div class="field"><label for="ipb0">Sostenuta da</label><select id="ipb0">${payers().map(m=>`<option ${pb===m?"selected":""}>${h(m)}</option>`).join("")}</select>
-      <p class="hint">Se il file contiene il numero di carta o l’IBAN, dalla volta successiva lo riconosco da solo.</p></div>
-    ${drop}
+    ${list.length?`<div class="field"><label for="iacc0">Conto o carta</label>${accSel("iacc0",sel,true)}</div>`:`<p class="hint">Prima di importare, aggiungi il conto o la carta da cui arriva l’estratto. Basta farlo una volta.</p>`}
+    ${!list.length||S.impNew?contoForm("nc"):""}
+    ${c?`<p class="hint">${h(tips[c.t]||tips.cc)} Se il file contiene l’IBAN o il numero di carta, dalla volta successiva riconosco il conto da solo.</p>${drop}`:""}
     <p class="hint">Puoi ricaricare lo stesso file: i movimenti già presenti vengono saltati.</p>
   </section>`}
   const opt=(v,sel)=>`<option value="-1">—</option>`+I.cols.map((c,i)=>`<option value="${i}" ${sel===i?"selected":""}>${h(c)}</option>`).join("");
@@ -887,7 +926,7 @@ function vImp(){
   return `<section style="padding-top:6px">
     <h2 style="font:800 1.3rem/1.2 var(--display);margin:8px 0 2px;word-break:break-word">${h(I.fileName)}</h2>
     <p class="hint">${I.remembered?"Formato riconosciuto: uso le colonne dell’ultima volta.":"Controlla le colonne: verranno ricordate per i prossimi file uguali."}</p>
-    ${flowSeg(I.flow)}
+    <div class="field"><label for="iacc">Conto o carta</label>${accSel("iacc",I.acc,false)}</div>
     <div class="two" style="margin-top:6px">
       <div class="field"><label for="ipb">Sostenuta da</label><select id="ipb">${payers().map(m=>`<option ${I.payer===m?"selected":""}>${h(m)}</option>`).join("")}</select>${I.payerBy?`<p class="hint">${h(I.payerBy)}</p>`:""}</div>
       <div class="field"><label for="iper">Beneficiario predefinito</label><select id="iper">${members().map(m=>`<option ${I.person===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
@@ -915,8 +954,13 @@ function vImp(){
     ${drop}
   </section>`;
 }
+function contoForm(p){return `<div class="block" style="padding-bottom:12px"><h2>Nuovo conto</h2>
+  <div class="field"><label for="${p}_n">Nome</label><input type="text" id="${p}_n" placeholder="Es. UniCredit conto, Widiba, BBVA risparmio"></div>
+  <div class="two"><div class="field"><label for="${p}_t">Tipo</label><select id="${p}_t">${Object.entries(FLOWS).map(([k,n])=>`<option value="${k}">${h(n)}</option>`).join("")}</select></div>
+  <div class="field"><label for="${p}_pb">Intestatario</label><select id="${p}_pb">${payers().map(m=>`<option>${h(m)}</option>`).join("")}</select></div></div>
+  <div class="btns" style="margin:4px 0 0"><button class="btn" data-act="addconto" data-p="${p}" ${S.canWrite?"":"disabled"}>Aggiungi conto</button></div></div>`}
 function pRow(r){
-  const byTxt=r.gw&&r.k==="giroconto"?"Addebito carta: "+r.gw:r.cb==="Claude"?`Riconosciuto da Claude · ${Math.round((r.f||0)*100)}%`:r.cb==="regola"?"Regola salvata":r.cb==="dizionario"?"Riconosciuto dal nome":r.cb==="manuale"?"Scelto da te":r.k==="spesa"?"Da classificare":"";
+  const byTxt=r.gw&&r.k==="giroconto"?r.gw:r.cb==="Claude"?`Riconosciuto da Claude · ${Math.round((r.f||0)*100)}%`:r.cb==="regola"?"Regola salvata":r.cb==="dizionario"?"Riconosciuto dal nome":r.cb==="manuale"?"Scelto da te":r.k==="spesa"?"Da classificare":"";
   const low=r.k==="spesa"&&(!r.c||(r.cb==="Claude"&&(r.f||0)<0.6));
   return `<div class="prow ${r.dup?"dup":""}">
     <div class="top"><span class="d num">${r.d.slice(8,10)}/${r.d.slice(5,7)}</span><span class="m">${h(r.m)}</span><span class="num" style="font-weight:700">${r.a>0?"+":"−"}${eur(Math.abs(r.a))}</span></div>
@@ -948,7 +992,7 @@ async function openEdit(id){
       <div class="field"><label for="ep">Beneficiario</label><select id="ep">${[...new Set([...members(),t.p].filter(Boolean))].map(m=>`<option ${t.p===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
       <div class="field"><label for="epb">Sostenuta da</label><select id="epb">${[...new Set([...payers(),t.pb].filter(Boolean))].map(m=>`<option ${t.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
-    <div class="field"><label for="es">Mezzo</label><select id="es">${[...new Set([...sources(),t.s].filter(Boolean))].map(m=>`<option ${t.s===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
+    <div class="field"><label for="es">Mezzo</label><select id="es">${contoList().map(([id,v])=>`<option value="${id}" ${t.acc===id?"selected":""}>${h(v.n)}</option>`).join("")}${[...new Set([FLOWS.cc,FLOWS.carta,FLOWS.ris,CASH,t.s].filter(Boolean))].map(m=>`<option value="${h(m)}" ${!conti()[t.acc]&&t.s===m?"selected":""}>${h(m)}${contoList().length&&m!==CASH?" (senza conto)":""}</option>`).join("")}</select></div>
     <div class="field"><label for="en">Nota</label><input type="text" id="en" value="${h(t.n||"")}"></div>
     ${t.s!==CASH?`<label class="check"><input type="checkbox" id="erule" checked><span>Usa questa categoria e questo beneficiario per tutti i movimenti di “${h(t.m)}”, anche futuri</span></label>`:""}
     <div class="btns"><button class="btn" data-act="saveedit" style="flex:1" ${S.canWrite?"":"disabled"}>Salva modifiche</button><button class="btn danger" data-act="deltx" ${S.canWrite?"":"disabled"}>Elimina</button></div>`);
@@ -958,7 +1002,7 @@ async function saveEdit(){
   const t=S.byId[S.sheet.id];if(!t) return;
   const a=num($("#ea").value);if(isNaN(a)||a===0){toast("Inserisci un importo valido.");return}
   const k=$("#ek").value;
-  const nt={...t,m:$("#em").value.trim()||t.m,d:$("#ed").value||t.d,k,c:k==="spesa"?$("#ec").value:null,p:$("#ep").value,pb:$("#epb").value,s:$("#es").value,n:$("#en").value.trim(),cb:"manuale",f:null};
+  const nt={...t,m:$("#em").value.trim()||t.m,d:$("#ed").value||t.d,k,c:k==="spesa"?$("#ec").value:null,p:$("#ep").value,pb:$("#epb").value,...(conti()[$("#es").value]?{acc:$("#es").value,s:FLOWS[conti()[$("#es").value].t]||FLOWS.cc}:{acc:"",s:$("#es").value}),n:$("#en").value.trim(),cb:"manuale",f:null};
   nt.a=(k==="entrata")?Math.abs(a):(t.a>0&&k==="spesa"?Math.abs(a):-Math.abs(a));
   try{
     if(ymOf(nt.d)!==ymOf(t.d)) await delTx(t);
@@ -976,10 +1020,22 @@ async function saveEdit(){
 function openSettings(){
   S.sheet={type:"settings"};
   const rules=Object.entries(S.settings.rules||{}).filter(([,v])=>v&&v.c).sort((a,b)=>a[0].localeCompare(b[0]));
+  const lc={};for(const t of S.all) if(t.s!==CASH&&!conti()[t.acc]) lc[t.s]=(lc[t.s]||0)+1;
+  const legacy=Object.entries(lc),userCats=Object.entries(S.settings.cats||{}).filter(([,v])=>v&&v.n);
   openSheet(`<h3>Impostazioni</h3><div class="sub">Valgono per tutta la famiglia.</div>
     <div class="field"><label for="smem">Beneficiari delle spese (uno per riga)</label><textarea id="smem">${h(members().join("\n"))}</textarea><p class="hint">“Famiglia” è per le spese comuni.</p></div>
     <div class="field"><label for="spay">Chi sostiene le spese (uno per riga)</label><textarea id="spay" style="min-height:70px">${h(payers().join("\n"))}</textarea></div>
     <div class="btns"><button class="btn" data-act="savesettings" ${S.canWrite?"":"disabled"}>Salva impostazioni</button></div>
+    <div class="field"><div class="lab">Conti e carte (${contoList().length})</div>
+      ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>`<div><span>${h(v.n)}<br><span class="hint">${h(FLOWS[v.t]||"")}${v.pb?" · "+h(v.pb):""}</span></span><button class="link" data-act="delconto" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:`<p class="hint">Nessun conto: aggiungi quelli da cui importi gli estratti.</p>`}
+      ${legacy.length&&contoList().length?legacy.map(([src,n],i)=>{const ok=contoList().filter(([,v])=>FLOWS[v.t]===src);return `<p class="hint" style="margin-top:10px">${n} movimenti “${h(src)}” importati prima dei conti.${ok.length?" Assegnali a:":" Aggiungi un conto di questo tipo per assegnarli."}</p>${ok.length?`<div class="two"><select id="lg_${i}" aria-label="Conto per ${h(src)}">${ok.map(([k,v])=>`<option value="${k}">${h(v.n)}</option>`).join("")}</select><button class="btn ghost" data-act="assignleg" data-s="${h(src)}" data-i="${i}" ${S.canWrite?"":"disabled"}>Assegna</button></div>`:""}`}).join(""):""}
+    </div>
+    ${contoForm("sc")}
+    <div class="field"><div class="lab">Categorie aggiunte da voi</div>
+      ${userCats.length?`<div class="rules">${userCats.map(([k,v])=>`<div><span><i class="dot" style="background:${v.c};display:inline-block;vertical-align:-1px;margin-right:6px"></i>${h(v.n)}</span><button class="link" data-act="delcat" data-k="${h(k)}" aria-label="Elimina ${h(v.n)}" style="color:var(--danger)">×</button></div>`).join("")}</div>`:""}
+      <div class="two" style="margin-top:8px"><input type="text" id="ncat" placeholder="Nuova categoria" aria-label="Nome della nuova categoria"><button class="btn ghost" data-act="addcat" ${S.canWrite?"":"disabled"}>Aggiungi</button></div>
+      <p class="hint">Se elimini una categoria, i movimenti che la usavano finiscono in “Altro”.</p>
+    </div>
     <div class="field"><div class="lab">Regole imparate (${rules.length})</div>
       ${rules.length?`<div class="rules">${rules.map(([k,v])=>`<div><span>${h(k)}</span><span>${catDot(v.c)} ${h((CAT[v.c]||CAT.altro).n)}${v.p?" · "+h(v.p):""} <button class="link" data-act="delrule" data-k="${h(k)}" aria-label="Elimina regola" style="margin-left:6px;color:var(--danger)">×</button></span></div>`).join("")}</div>`:`<p class="hint">Si creano quando correggi la categoria di un movimento.</p>`}
     </div>
@@ -1076,7 +1132,7 @@ document.addEventListener("click",async e=>{
     document.querySelectorAll("[data-b]").forEach(i=>{const v=num(i.value),k=i.dataset.b;if(!isNaN(v)&&v>0)patch[k]=Math.round(v*100)/100;else if(B[k])patch[k]=null});
     try{await saveSettings({budgets:patch});closeSheet();toast("Budget salvato")}catch(err){toast(errMsg(err))}
   }
-  else if(act==="mkgiro"){const t=S.byId[el.dataset.id];if(!t)return;el.disabled=true;try{await putTx([{...t,k:"giroconto",c:null,cb:"manuale"}]);toast("Segnato come addebito carta: non conta più come spesa")}catch(err){toast(errMsg(err));el.disabled=false}}
+  else if(act==="mkgiro"){const t=S.byId[el.dataset.id];if(!t)return;el.disabled=true;try{await putTx([{...t,k:"giroconto",c:null,cb:"manuale"}]);toast("Segnato come giroconto: non conta più come spesa o entrata")}catch(err){toast(errMsg(err));el.disabled=false}}
   else if(act==="settings") openSettings();
   else if(act==="close") closeSheet();
   else if(act==="filtercat"){S.f={q:"",c:el.dataset.c,p:S.hf.p,s:"",pb:S.hf.pb};S.view="movs";render();window.scrollTo(0,0)}
@@ -1092,7 +1148,28 @@ document.addEventListener("click",async e=>{
   else if(act==="filterpb"){S.f={q:"",c:S.hf.c,p:S.hf.p,s:"",pb:el.dataset.p};S.view="movs";render();window.scrollTo(0,0)}
   else if(act==="msort"){S.msort=el.dataset.s;render()}
   else if(act==="isort"){S.imp.sort=el.dataset.s;buildRows();render()}
-  else if(act==="flow"){const f=el.dataset.f;if(S.imp){S.imp.flow=f;S.imp.sig=sigOf(S.imp.cols,f);S.imp.edits={};buildRows()}else S.impFlow=f;render()}
+  else if(act==="addconto"){
+    const p=el.dataset.p,n=$("#"+p+"_n").value.trim();if(!n){toast("Scrivi il nome del conto.");$("#"+p+"_n").focus();return}
+    const id="k"+Date.now().toString(36),v={n,t:$("#"+p+"_t").value,pb:$("#"+p+"_pb").value};
+    el.disabled=true;
+    try{await saveSettings({conti:{[id]:v}});S.settings.conti={...conti(),[id]:v};S.impAcc=id;S.impNew=false;toast("Conto aggiunto");if(S.sheet&&S.sheet.type==="settings")openSettings();else render()}
+    catch(err){toast(errMsg(err));el.disabled=false}
+  }
+  else if(act==="delconto"){const id=el.dataset.k;try{await saveSettings({conti:{[id]:null}});const c={...conti()};delete c[id];S.settings.conti=c;openSettings()}catch(err){toast(errMsg(err))}}
+  else if(act==="assignleg"){
+    const src=el.dataset.s,target=$("#lg_"+el.dataset.i).value;if(!conti()[target])return;
+    const list=S.all.filter(t=>!conti()[t.acc]&&t.s===src).map(t=>({...t,acc:target}));
+    el.disabled=true;
+    try{await putTx(list);toast("Assegnati "+list.length+" movimenti a "+conti()[target].n);openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
+  }
+  else if(act==="addcat"){
+    const n=$("#ncat").value.trim();if(!n){toast("Scrivi il nome della categoria.");$("#ncat").focus();return}
+    if(CATS.some(([,x])=>norm(x)===norm(n))){toast("Esiste già una categoria con questo nome.");return}
+    const used=new Set(CATS.map(c=>c[2])),c=EXTRA_COLORS.find(x=>!used.has(x))||EXTRA_COLORS[CATS.length%EXTRA_COLORS.length];
+    const id="u"+hash(norm(n)).slice(0,8);
+    try{await saveSettings({cats:{[id]:{n,c}}});S.settings.cats={...(S.settings.cats||{}),[id]:{n,c}};rebuildCats();toast("Categoria aggiunta");openSettings()}catch(err){toast(errMsg(err))}
+  }
+  else if(act==="delcat"){const id=el.dataset.k;try{await saveSettings({cats:{[id]:null}});const c={...(S.settings.cats||{})};delete c[id];S.settings.cats=c;rebuildCats();openSettings()}catch(err){toast(errMsg(err))}}
   else if(act==="savecash"){
     const C=S.cash;C.a=$("#ca").value;if($("#cw"))C.w=$("#cw").value;C.d=$("#cd").value||today();
     const a=num(C.a);
@@ -1147,9 +1224,10 @@ document.addEventListener("change",e=>{
   if(id==="fs"){S.f.s=t.value;t.blur();render();return}
   if(id==="fpb"){S.f.pb=t.value;t.blur();render();return}
   if(id==="hfp"||id==="hfpb"||id==="hfc"){S.hf[id.slice(2)]=t.value;t.blur();render();return}
-  if(id==="ipb0"){S.impPayer=t.value;setDevPayer(t.value);return}
+  if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
   if(id==="cd"&&S.cash){S.cash.d=t.value;return}
   const I=S.imp;if(!I) return;
+  if(id==="iacc"){const c=conti()[t.value];if(!c)return;I.acc=t.value;S.impAcc=t.value;I.flow=c.t||"cc";I.sig=sigOf(I.cols,I.flow);if(c.pb&&payers().includes(c.pb))I.payer=c.pb;I.payerBy="";I.edits={};buildRows();t.blur();render();return}
   if(id==="ipb"){I.payer=t.value;I.payerBy="";buildRows();t.blur();render();return}
   if(t.dataset.pp){const r=I.rows.find(x=>x.id===t.dataset.pp);if(r){I.edits[r.rk]=Object.assign(I.edits[r.rk]||{},{p:t.value})}buildRows();t.blur();render();return}
   if(id==="iper"){const old=I.person;I.person=t.value;for(const e2 of Object.values(I.edits)) if(e2.p===old) delete e2.p;buildRows();t.blur();render();return}
@@ -1189,10 +1267,10 @@ render();
   onAuthStateChanged(S.auth,u=>{
     unsubs.forEach(f=>f());unsubs=[];
     S.authed=!!u;S.uid=u?u.email:null;
-    if(!u){S.months={};S.settings=clone(DEFAULTS);S.imp=null;rebuild();render();return}
+    if(!u){S.months={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
     const denied=err=>{if(err&&err.code==="permission-denied"){S.authMsg="Questo account non è autorizzato a usare l’app.";signOut(S.auth)}else toast("Connessione ai dati persa: ricarica la pagina.")};
     unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render()},denied));
-    unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};render()},denied));
+    unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render()},denied));
     render();
   });
 })();
