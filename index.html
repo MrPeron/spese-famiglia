@@ -273,7 +273,7 @@ const DICT = [
   ["mutuo","mutuo|finanziament|prestito personale|leasing|cessione del quinto|agos|findomestic|compass|cofidis|santander consumer"],
   ["abbonamenti","netflix|spotify|disney|dazn|prime video|amazon prime|apple\\.com|itunes|google play|youtube|sky\\b|now tv|nowtv|audible|icloud|openai|chatgpt|anthropic|microsoft|adobe|dropbox|timvision|infinity|paramount"],
   ["online","amazon|amzn|ebay|aliexpress|temu|shein|etsy|wish\\.com"],
-  ["banca","commission|canone|imposta di bollo|bollo|f24|agenzia (delle )?entrate|pagopa|assicuraz|generali|allianz|unipol|axa|zurich|reale mutua|interessi|spese tenuta|tari\\b|inps"],
+  ["banca","commission|canone|imposta di bollo|bollo|ritenut|f24|agenzia (delle )?entrate|pagopa|assicuraz|generali|allianz|unipol|axa|zurich|reale mutua|interessi|spese tenuta|tari\\b|inps"],
   ["spesa","esselunga|conad|coop\\b|lidl|eurospin|aldi\\b|despar|interspar|eurospar|spar\\b|pam\\b|panorama|carrefour|famila|ali supermercat|alisupermercat|iper\\b|ipermercat|tosano|migross|crai\\b|penny|unes\\b|bennet|naturasi|cadoro|emisfero|todis|tigre\\b|prix\\b|macelleri|panifici|forno\\b|fruttivendol|supermerc|minimarket|alimentari|gastronomi|pescheri"],
   ["ristoranti","ristorant|trattoria|osteria|pizzeri|pizza|bar\\b|caffe|cafe\\b|bistrot|sushi|mcdonald|burger king|kfc\\b|starbucks|autogrill|deliveroo|glovo|just ?eat|gelateri|pasticceri|enoteca|birreri|pub\\b|roadhouse|old wild west|spizzico|paninoteca|piadineri|kebab|ramen"],
   ["auto","enilive|eni\\b|q8|tamoil|esso\\b|agip|ip\\b|api\\b|shell|totalerg|repsol|carburant|distributore|benzina|gasolio|autolavaggio|gommista|officina|carrozzeri|norauto|revisione"],
@@ -295,6 +295,10 @@ const DICT = [
 const RE_PREL = /(?:^|[^a-z])(prelievo|prelevamento|prel\.?\s|atm\b|cash withdrawal|withdrawal|anticipo contant)/i;
 const RE_SALDO = /(pagamento saldo|saldo estratto|addebito (in|su) (c\/c|conto)|addebito in conto|pagamento estratto|addebito e\/c|pagamento rata)/i;
 const RE_STORNO = /(storno|rimborso|reso\b|refund|accredito pos)/i;
+// Vincoli (es. Widiba): il capitale che va sul vincolo e torna indietro è un giroconto; interessi e ritenute no
+const RE_VINC = /(vincol|svincol|deposito a termine|time deposit)/i;
+const RE_VINC_NO = /(ritenut|imposta|bollo|interess|competenz)/i;
+function isVincolo(t){return RE_VINC.test(t)&&!RE_VINC_NO.test(t)}
 const RE_GIRO = /(giroconto|giro conto|saldo carta|addebito (mensile )?carta di credito|(addebit|pagament|saldo|rimbors|estratto)\w*\s(\S+\s){0,4}?cart[ae]\s(di\s)?credito|carte di credito|carta credito\b|estratto conto carta|addebito e\/c|addebito nexi|nexi payments|ricarica carta|ricarica prepagata)/i;
 
 // ---------- Stato ----------
@@ -399,6 +403,7 @@ function extractMerchant(desc){
 }
 function detectKind(desc,a,flow){
   const t=norm(desc);
+  if(flow!=="carta"&&isVincolo(t)) return "giroconto";
   if(flow==="ris"){
     if(a<0&&/(bollo|imposta|ritenut|commission|canone|spese)/.test(t)) return "spesa";
     if(a>0&&/(interess|cedol|premio|rendiment)/.test(t)) return "entrata";
@@ -817,13 +822,14 @@ function vCardCheck(){
   const charged=ym=>-sum(S.all.filter(t=>t.s===FLOWS.cc&&t.k==="giroconto"&&ymOf(t.d)===ym&&t.a<0));
   const rows=perMonths().map(ym=>({ym,ch:charged(ym),sp:cardNet(shiftYM(ym,-1))})).filter(r=>r.ch>0.004||r.sp>0.004);
   const sus=perTx().filter(t=>t.s!==FLOWS.carta&&t.s!==CASH&&(t.k==="spesa"||t.k==="entrata")).map(t=>{
-    const c=t.s===FLOWS.cc&&t.k==="spesa"&&t.a<0?cardCharge(t.d,t.a):null;
-    const w=c?null:ownTransfer(t.d,t.a,t.acc,flowOf(t));
-    return {t,why:c?"Addebito carta: "+c:w?"Trasferimento tra i vostri conti: "+w:null};
+    const v=isVincolo(norm(t.x+" "+t.m));
+    const c=!v&&t.s===FLOWS.cc&&t.k==="spesa"&&t.a<0?cardCharge(t.d,t.a):null;
+    const w=v||c?null:ownTransfer(t.d,t.a,t.acc,flowOf(t));
+    return {t,why:v?(t.a<0?"Vincolo: soldi spostati sul conto vincolato":"Vincolo: capitale restituito alla scadenza"):c?"Addebito carta: "+c:w?"Trasferimento tra i vostri conti: "+w:null};
   }).filter(x=>x.why);
   if(!rows.length&&!sus.length) return "";
   return `<section class="block"><h2>Carta di credito e trasferimenti</h2>
-    ${sus.length?`<p class="banner">Questi movimenti sembrano l’addebito della carta o uno spostamento tra i vostri conti, ma contano come spesa o entrata. Così verrebbero contati due volte.</p>
+    ${sus.length?`<p class="banner">Questi movimenti sembrano l’addebito della carta, un vincolo o uno spostamento tra i vostri conti, ma contano come spesa o entrata. Così verrebbero contati due volte.</p>
       ${sus.map(({t,why})=>`<div class="rules" style="margin-bottom:8px"><div><span><b>${h(t.m)}</b> · ${ddmm(t.d)}<br><span class="hint">${h(why)}</span></span><span class="num" style="white-space:nowrap">${t.a>0?"+":"−"}${eur(Math.abs(t.a))}</span></div><div><span class="hint" style="margin:0">${h(srcName(t))}</span><button class="link" data-act="mkgiro" data-id="${h(t.id)}" ${S.canWrite?"":"disabled"}>Segna come giroconto</button></div></div>`).join("")}`:""}
     ${rows.length?`<div class="recon num">
       <span class="h">Addebito sul conto</span><span class="h">Spese carta mese prima</span><span class="h">Esito</span>
