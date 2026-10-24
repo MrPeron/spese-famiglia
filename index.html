@@ -1096,6 +1096,12 @@ function vMovs(){
   }
   return html;
 }
+// Spese in contanti ricorrenti (pulizie, baby sitter…): le più registrate negli ultimi 6 mesi, con l'ultimo importo
+function cashFreq(){
+  const from=shiftYM(ymOf(today()),-6)+"-01",g={};
+  for(const t of S.all){if(t.s!==CASH||t.k!=="spesa"||t.d<from)continue;const k=norm(t.m);if(!k)continue;const o=g[k]=g[k]||{n:0,last:null};o.n++;if(!o.last||t.d>o.last.d||(t.d===o.last.d&&(t.t||0)>(o.last.t||0)))o.last=t}
+  return Object.values(g).sort((a,b)=>b.n-a.n||b.last.d.localeCompare(a.last.d)).slice(0,8).map(o=>o.last);
+}
 function newCash(){return {k:"spesa",a:"",w:"",c:"",p:members()[0],pb:devPayer(),d:today()}}
 function vCash(){
   const C=S.cash||(S.cash=newCash());
@@ -1107,6 +1113,7 @@ function vCash(){
       <button data-act="ck" data-k="spesa" aria-pressed="${C.k==="spesa"}">Spesa in contanti</button>
       <button data-act="ck" data-k="prelievo" aria-pressed="${C.k==="prelievo"}">Prelievo</button>
     </div>
+    ${C.k==="spesa"&&cashFreq().length?`<div class="field"><div class="lab">Frequenti</div><div class="chips">${cashFreq().map(t=>`<button class="chip" data-act="cfreq" data-id="${h(t.id)}" aria-pressed="${norm(C.w)===norm(t.m)}">${catDot(t.c)}${h(t.m)} · <span class="num">${eur(-t.a)}</span></button>`).join("")}</div><p class="hint">Un tocco compila tutto con l’ultima volta: controlla l’importo e registra.</p></div>`:""}
     <label class="amount-in"><span>€</span><input id="ca" inputmode="decimal" placeholder="0,00" value="${h(C.a)}" aria-label="Importo" ${S.canWrite?"":"disabled"}></label>
     ${C.k==="spesa"?`
     <div class="field"><label for="cw">Dove o per cosa</label><input type="text" id="cw" placeholder="Es. mercato del sabato, mancia, gita scolastica" value="${h(C.w)}"></div>
@@ -1403,6 +1410,7 @@ document.addEventListener("click",async e=>{
   else if(act==="edit") openEdit(el.dataset.id);
   else if(act==="saveedit") saveEdit();
   else if(act==="deltx"){const t=S.byId[S.sheet&&S.sheet.id];if(t&&confirm("Eliminare questo movimento?")){try{await delTx(t);closeSheet();toast("Movimento eliminato")}catch(err){toast(errMsg(err))}}}
+  else if(act==="cfreq"){const t=S.byId[el.dataset.id];if(t){Object.assign(S.cash,{k:"spesa",a:String(-t.a).replace(".",","),w:t.m,c:t.c||"altro",p:t.p||members()[0],pb:t.pb||S.cash.pb});render();const a=$("#ca");if(a){a.focus();a.select()}}}
   else if(act==="ck"){S.cash.k=el.dataset.k;render()}
   else if(act==="cc"){S.cash.c=el.dataset.c;render()}
   else if(act==="cp"){S.cash.p=el.dataset.p;render()}
