@@ -232,6 +232,10 @@ textarea{min-height:110px;resize:vertical}
 .bud label:first-child{border-top:0}
 .bud small{display:block;color:var(--muted);font-size:.78rem}
 .bud input{min-height:40px;text-align:right}
+.plan{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line);display:grid;gap:4px}
+.plan>div{display:flex;justify-content:space-between;gap:10px}
+.plan .pos b{color:var(--ok)}
+.plan .neg b{color:var(--danger)}
 .catlist{display:grid;gap:6px}
 .catlist>div{display:grid;grid-template-columns:12px 1fr 24px;gap:10px;align-items:center}
 .catlist input{min-height:40px;padding:6px 10px}
@@ -274,7 +278,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "17 · 24/10/2026";
+const APP_VERSION = "18 · 24/10/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -890,8 +894,9 @@ function vHome(){
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
   </section>
   ${J?vJoint(J):""}
+  ${fam&&!filtered?vPlanMonth(tx,tot,nm):""}
   ${vChart()}
-  ${cats.length?`<section class="block"><div class="bh"><h2>Per categoria</h2><button class="link" data-act="budget">${hasB?"Modifica budget":"Imposta budget"}</button></div>
+  ${cats.length?`<section class="block"><div class="bh"><h2>Per categoria</h2><button class="link" data-act="budget">${hasB?"Piano mensile":"Imposta il piano"}</button></div>
     ${!budgetOn()&&hasB?`<p class="hint">Il budget è per tutta la famiglia: con il filtro per persona non lo mostro.</p>`:""}
     ${cats.map(catRow).join("")}
   </section>`:`<section class="block"><h2>Nessuna spesa ${h(perIn())}</h2><p class="hint" style="padding-bottom:10px">Cambia periodo in alto${filtered?", togli qualche filtro":""} o importa un estratto.</p></section>`}
@@ -1374,13 +1379,44 @@ function openPeriod(){
     </div>
     <div class="btns"><button class="btn" data-act="applyper" style="flex:1">Applica</button></div>`);
 }
+// Medie mensili degli ultimi 12 mesi interi (o dei mesi con dati, se sono meno): spese per categoria ed entrate
+function avg12(){
+  const cur=ymOf(today()),to=shiftYM(cur,-1),first=S.all.length?ymOf(S.all[S.all.length-1].d):cur;
+  let from=shiftYM(cur,-12);if(first>from)from=first;
+  let n=0;for(let ym=from;ym<=to;ym=shiftYM(ym,1))n++;
+  const cat={};let inc=0;
+  if(n>0) for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>to)continue;if(t.k==="spesa"){const c=t.c||"altro";cat[c]=(cat[c]||0)-t.a/n}else if(t.k==="entrata")inc+=t.a/n}
+  return {n,from,to,cat,inc};
+}
+function round10(v){return Math.round(v/10)*10}
 function openBudget(){
   S.sheet={type:"budget"};
-  const B=budgets(),cur=ymOf(today()),last=[1,2,3].map(i=>shiftYM(cur,-i)),avg={};
-  S.all.filter(t=>t.k==="spesa"&&last.includes(ymOf(t.d))).forEach(t=>{const c=t.c||"altro";avg[c]=(avg[c]||0)-t.a/3});
-  openSheet(`<h3>Budget mensile</h3><div class="sub">Quanto pensate di spendere ogni mese per categoria, per tutta la famiglia. Su un periodo di più mesi il budget si moltiplica per il numero di mesi. Lascia vuoto per non usarlo.</div>
-    <div class="bud">${CATS.map(([id,n])=>`<label for="b_${id}">${catDot(id)}<span>${h(n)}${avg[id]>0.5?`<small>Media ultimi 3 mesi: ${eur(avg[id])}</small>`:""}</span><input type="text" inputmode="decimal" id="b_${id}" data-b="${id}" placeholder="€" value="${B[id]?h(String(B[id]).replace(".",",")):""}"></label>`).join("")}</div>
-    <div class="btns"><button class="btn" data-act="savebudget" style="flex:1" ${S.canWrite?"":"disabled"}>Salva budget</button><button class="btn ghost" data-act="close">Annulla</button></div>`);
+  const B=budgets(),A=avg12(),inc=S.settings.budInc;
+  openSheet(`<h3>Piano mensile</h3><div class="sub">Per tutta la famiglia, al mese. ${A.n?`Le medie sono calcolate su ${A.n} ${A.n===1?"mese":"mesi"} (${h(monShort(A.from))} ${A.from.slice(2,4)} – ${h(monShort(A.to))} ${A.to.slice(2,4)}).`:"Servono almeno un mese intero di movimenti per le medie."}</div>
+    <div class="field"><label for="b_inc">Entrate previste</label><input type="text" inputmode="decimal" id="b_inc" placeholder="€" value="${inc?h(String(inc).replace(".",",")):""}">${A.inc>0.5?`<p class="hint">Media: ${eur(A.inc)} (stipendi, assegni, interessi; i giroconti non contano)</p>`:""}</div>
+    <div class="lab" style="font-weight:600;font-size:.9rem;margin:14px 0 6px">Uscite previste per categoria</div>
+    <div class="bud">${CATS.map(([id,n])=>`<label for="b_${id}">${catDot(id)}<span>${h(n)}${A.cat[id]>0.5?`<small>Media: ${eur(A.cat[id])}</small>`:""}</span><input type="text" inputmode="decimal" id="b_${id}" data-b="${id}" placeholder="€" value="${B[id]?h(String(B[id]).replace(".",",")):""}"></label>`).join("")}</div>
+    <div class="plan" id="plan"></div>
+    <div class="btns">${A.n?`<button class="btn ghost" data-act="budavg">Usa le medie</button>`:""}<button class="btn" data-act="savebudget" style="flex:1" ${S.canWrite?"":"disabled"}>Salva piano</button><button class="btn ghost" data-act="close">Annulla</button></div>`);
+  updatePlan();
+}
+// Totale uscite e risparmio atteso, ricalcolati mentre si scrive
+function updatePlan(){
+  const el=$("#plan");if(!el)return;
+  const inc=num(($("#b_inc")||{}).value||"");let out=0;document.querySelectorAll("[data-b]").forEach(i=>{const v=num(i.value);if(!isNaN(v)&&v>0)out+=v});
+  const sav=(isNaN(inc)?0:inc)-out;
+  el.innerHTML=`<div><span>Entrate previste</span><b class="num">${eur(isNaN(inc)?0:inc)}</b></div><div><span>Uscite previste</span><b class="num">${eur(out)}</b></div>
+    <div class="${sav<0?"neg":"pos"}"><span>Risparmio atteso</span><b class="num">${eur(sav)}</b></div>${!isNaN(inc)&&inc>0?`<p class="hint" style="margin:4px 0 0">${sav<0?"Le uscite superano le entrate":"Pari al "+Math.round(sav/inc*100)+"% delle entrate"}.</p>`:""}`;
+}
+// Riepilogo: previsto e reale per entrate, uscite e risparmio
+function vPlanMonth(tx,tot,nm){
+  const B=budgets(),out=Object.values(B).reduce((x,v)=>x+(v>0?v:0),0)*nm,inc=(S.settings.budInc||0)*nm;
+  if(!out&&!inc) return "";
+  const realInc=sum(tx.filter(t=>t.k==="entrata")),row=(lab,p,r,good)=>{const d=r-p;return `<div class="recon num"><span>${lab}</span><span>${eur(p)}</span><span>${eur(r)} <span class="${(good?d>=0:d<=0)?"ok":"ko"}" style="font-size:.8rem">${d>=0?"+":"−"}${eur(Math.abs(d))}</span></span></div>`};
+  return `<section class="block"><div class="bh"><h2>Piano ${h(perIn())}</h2><button class="link" data-act="budget">Modifica</button></div>
+    <div class="recon num"><span class="h"></span><span class="h">Previsto</span><span class="h">Reale</span></div>
+    ${inc?row("Entrate",inc,realInc,true):""}${row("Uscite",out,tot,false)}${inc?row("Risparmio",inc-out,realInc-tot,true):""}
+    <p class="hint" style="padding-bottom:10px">Uscite reali senza giroconti, addebiti carta e vincoli; entrate senza trasferimenti tra i vostri conti.</p></section>`;
 }
 async function exportCSV(scope){
   let list=S.all;
@@ -1458,7 +1494,13 @@ document.addEventListener("click",async e=>{
   else if(act==="savebudget"){
     const B=budgets(),patch={};
     document.querySelectorAll("[data-b]").forEach(i=>{const v=num(i.value),k=i.dataset.b;if(!isNaN(v)&&v>0)patch[k]=Math.round(v*100)/100;else if(B[k])patch[k]=null});
-    try{await saveSettings({budgets:patch});closeSheet();toast("Budget salvato")}catch(err){toast(errMsg(err))}
+    const inc=num(($("#b_inc")||{}).value||"");
+    try{await saveSettings({budgets:patch,budInc:!isNaN(inc)&&inc>0?Math.round(inc*100)/100:null});S.settings.budInc=!isNaN(inc)&&inc>0?inc:undefined;closeSheet();toast("Piano salvato")}catch(err){toast(errMsg(err))}
+  }
+  else if(act==="budavg"){
+    const A=avg12(),i=$("#b_inc");if(i&&A.inc>0)i.value=String(round10(A.inc)).replace(".",",");
+    document.querySelectorAll("[data-b]").forEach(x=>{const v=A.cat[x.dataset.b]||0;x.value=v>=5?String(Math.max(10,round10(v))):""});
+    updatePlan();toast("Proposta dalle medie: controlla e salva");
   }
   else if(act==="mkgiro"){const t=S.byId[el.dataset.id];if(!t)return;el.disabled=true;try{await putTx([{...t,k:"giroconto",c:null,cb:"manuale"}]);toast("Segnato come giroconto: non conta più come spesa o entrata")}catch(err){toast(errMsg(err));el.disabled=false}}
   else if(act==="settings") openSettings();
@@ -1565,6 +1607,7 @@ document.addEventListener("click",async e=>{
   }
 });
 document.addEventListener("input",e=>{
+  if(e.target.dataset&&(e.target.dataset.b!==undefined||e.target.id==="b_inc")){updatePlan();return}
   const id=e.target.id;
   if(id==="fq"){S.f.q=e.target.value;clearTimeout(S.qt);S.qt=setTimeout(()=>{const pos=e.target.selectionStart;e.target.blur();render();const n=$("#fq");if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}},350)}
   else if(id==="ca"&&S.cash) S.cash.a=e.target.value;
