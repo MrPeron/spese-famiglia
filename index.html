@@ -239,6 +239,19 @@ textarea{min-height:110px;resize:vertical}
 .catlist{display:grid;gap:6px}
 .catlist>div{display:grid;grid-template-columns:12px minmax(0,1fr) minmax(0,8.5rem) 24px;gap:8px;align-items:center}
 .catlist select{min-height:40px;padding:6px 8px;font-size:15px}
+.hero3{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 2px}
+.hero3 span{display:block;color:var(--muted);font-size:.9rem}
+.hero3 b{font:700 1.5rem/1.2 var(--display)}
+.mrow{display:grid;grid-template-columns:minmax(0,.9fr) repeat(3,minmax(0,1fr));gap:6px;align-items:baseline;width:100%;padding:8px 2px;border:0;border-top:1px solid var(--line);background:none;text-align:right;font-size:.88rem;color:var(--ink)}
+.mrow>span:first-child{text-align:left}
+.mrow small{color:var(--muted);text-transform:none}
+button.mrow{cursor:pointer}
+button.mrow:hover,.mrow.on{background:var(--sunk)}
+.mrow.h{border-top:0;color:var(--muted);font-size:.78rem;padding-top:4px}
+.mrow.tot{border-top:2px solid var(--line)}
+.mrow.avg{color:var(--muted)}
+.mrow .ok{color:var(--ok);font-weight:600}
+.mrow .ko{color:var(--danger);font-weight:600}
 .mz{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 0}
 .mz.three{grid-template-columns:repeat(3,1fr)}
 .mz>div{background:var(--sunk);border-radius:10px;padding:8px 10px;min-width:0}
@@ -286,7 +299,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "26 · 16/11/2026";
+const APP_VERSION = "27 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -976,11 +989,17 @@ function vHome(){
     ${fam?`<select id="hfpb" aria-label="Sostenute da"><option value="">Pagate da ${h(payers().join(" + "))}</option>${payerOpts().map(m=>`<option value="${h(m)}" ${f.pb===m?"selected":""}>${m===JOINT?"Pagate dai conti cointestati":"Pagate da "+h(m)}</option>`).join("")}</select>`:""}
   </div>
   <section class="hero">
-    <div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())}${filtered?" · con filtri":""}</div>
-    <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>
-    ${delta}${fromPatr>0.004?`<div class="delta">di cui <b>${eur(fromPatr)}</b> pagate dal patrimonio</div>`:""}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
+    ${!filtered?(()=>{const N=monthNums(tx),pN=monthNums(prevPer.filter(inPage)),sp2=N.out+addJ,[ni,nd]=eurSplit(Math.abs(N.net));
+      const dd=prevName&&pN.out>0?sp2-pN.out:null;
+      return `<div class="lbl">${h(perIn()[0].toUpperCase()+perIn().slice(1))}${fam?"":" · "+h(S.page)}</div>
+      <div class="hero3"><div><span>Entrate</span><b class="num">${eur(N.inc)}</b></div><div><span>Spese</span><b class="num">${eur(sp2)}</b></div></div>
+      <div class="lbl" style="margin-top:6px">Netto</div>
+      <div class="big num" style="color:${N.net>=0?"var(--ok)":"var(--danger)"}">${N.net>=0?"+":"−"}${h(ni)}<small>${h(nd)} €</small></div>
+      ${dd!=null?`<div class="delta">Spese <b>${eur(Math.abs(dd))}</b> ${dd>=0?"in più":"in meno"} rispetto ${h(prevName)}</div>`:""}`})():`<div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())} · con filtri</div>
+    <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>${delta}`}${fromPatr>0.004?`<div class="delta">di cui <b>${eur(fromPatr)}</b> pagate dal patrimonio</div>`:""}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
   </section>
+  ${!filtered?vMonthTable(fam):""}
   ${!filtered?vMonth(tx,nm,fam,J):""}
   ${!filtered?vBridge(tx,fam,S.lastInc||0,S.lastOut||0):""}
   ${J?vJoint(J):""}
@@ -1035,7 +1054,7 @@ function vChart(){
   const every=ms.length>12?Math.ceil(ms.length/8):1;
   S.chart={cols,keys,color,name,bud};
   const ctx=pm.length===1;
-  return `<section class="block"><div class="bh"><h2>Mese per mese</h2>${ctx?`<span class="hint">ultimi 6 mesi</span>`:""}</div>
+  return `<section class="block"><div class="bh"><h2>Dove ho speso, mese per mese</h2>${ctx?`<span class="hint">ultimi 6 mesi</span>`:""}</div>
   <div class="chart" id="chart">
     <div class="plot">
       ${ticks.map(v=>`<div class="gl" style="bottom:${v/top*100}%"><span class="num">${eurShort(v)}</span></div>`).join("")}
@@ -1238,7 +1257,7 @@ function vBridge(tx,fam,inc,out){
   if(Math.abs(B.cardDiff)>0.004)L.push(r(B.cardDiff>=0?"Spese carta non ancora addebitate":"Addebiti carta di spese precedenti",sg(B.cardDiff)));
   if(B.cashAdj>0.004)L.push(r("Contanti spesi oltre i prelievi",sg(B.cashAdj)));
   if(Math.abs(resid)>1)L.push(r("Da verificare",sg(resid),"ko"));
-  return `<section class="block"><h2>${fam?"Saldi dei conti correnti":"Saldi dei tuoi conti"}</h2>
+  return `<section class="block"><h2>Quadratura saldi</h2><p class="hint">Serve a verificare che i saldi tornino con la banca: qui la carta conta quando viene addebitata.</p>
     ${ok?r("Saldo al "+itDate(B.open),eur(B.o),"",true):""}
     ${L.join("")}
     ${ok?r("Saldo al "+itDate(B.close),eur(B.c),"",true):r("Variazione dei conti",sg(B.D),B.D>=0?"ok":"ko",true)}
@@ -1246,24 +1265,47 @@ function vBridge(tx,fam,inc,out){
   </section>`;
 }
 // Riquadro "Il mese": entrate, uscite e risultato del corrente, con il previsto del piano e le uscite per mezzo e per tipo
-function vMonth(tx,nm,fam,J){
+// Entrate e spese per competenza: la spesa con la carta conta nel giorno in cui la fai, non quando viene addebitata
+function monthNums(tx){
   const sp=spOf(tx),cur=sp.filter(t=>!paidByPatr(t)),patr=-sum(sp.filter(paidByPatr));
   const m={carta:0,banca:0,dom:0,contanti:0};
   for(const t of cur) if(t.s!==CASH){const e=isRefund(t)&&refOf(t.rif[0]);m[mezzo(e||t)]-=t.a}
   const prel=-sum(tx.filter(t=>t.k==="prelievo"&&!isPatr(t))),cash=-sum(cur.filter(t=>t.s===CASH));
   m.contanti=Math.max(prel,cash);
   const ty={fissa:0,quotidiana:0,straordinaria:0};for(const t of cur) ty[spType(t)]-=t.a;ty.quotidiana+=Math.max(prel-cash,0);
-  const out=m.carta+m.banca+m.dom+m.contanti,inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t))),res=inc-out;
+  const out=m.carta+m.banca+m.dom+m.contanti,inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t)));
+  return {m,ty,prel,cash,patr,out,inc,net:inc-out};
+}
+function planMonth(){return {inc:S.settings.budInc||0,out:Object.values(budgets()).reduce((x,v)=>x+(v>0?v:0),0)}}
+// Tabella mese per mese: entrate, spese e netto di ogni mese; toccando un mese lo si apre
+function vMonthTable(fam){
+  const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
+  const P=fam?planMonth():null,pNet=P&&(P.inc||P.out)?P.inc-P.out:null;
+  const rows=ms.map(ym=>({ym,...monthNums(S.all.filter(t=>ymOf(t.d)===ym&&inPage(t)))})).filter(r=>r.inc||r.out);
+  if(rows.length<2) return "";
+  const T={inc:rows.reduce((x,r)=>x+r.inc,0),out:rows.reduce((x,r)=>x+r.out,0)};T.net=T.inc-T.out;
+  const sg=v=>(v>=0?"+":"−")+eur(Math.abs(v)),sn=v=>(v>=0?"+":"−")+fmtNum(Math.abs(v)),cur=ymOf(today());
+  const line=(lab,r,attrs,cls)=>`<${attrs?"button":"div"} class="mrow ${cls||""}" ${attrs||""}><span>${lab}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.out)}</span><span class="num ${r.net>=0?"ok":"ko"}">${sn(r.net)}</span></${attrs?"button":"div"}>`;
+  return `<section class="block"><div class="bh"><h2>Mese per mese</h2>${pNet!=null?`<span class="hint">netto previsto ${sg(pNet)} al mese</span>`:""}</div>
+    <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese</span><span>Netto</span></div>
+    ${rows.slice().reverse().map(r=>line(h(monShort(r.ym)[0].toUpperCase()+monShort(r.ym).slice(1))+" "+r.ym.slice(2,4)+(r.ym===cur?" <small>in corso</small>":""),r,`data-act="gomonth" data-ym="${r.ym}" aria-label="Apri ${h(ymLabel(r.ym))}"`,S.per.from===r.ym&&S.per.to===r.ym?"on":"")).join("")}
+    ${line("<b>Totale</b>",T,"","tot")}
+    ${line("Media al mese",{inc:T.inc/rows.length,out:T.out/rows.length,net:T.net/rows.length},"","avg")}
+    <p class="hint" style="padding-bottom:10px">Spese per competenza: la carta conta nel mese in cui la usi. Contanti = prelievi. Esclusi giroconti, risparmi e spese pagate dal patrimonio.</p>
+  </section>`;
+}
+function vMonth(tx,nm,fam,J){
+  const N=monthNums(tx),{m,ty,prel,cash,patr,out,inc}=N,res=N.net;
   S.lastInc=inc;S.lastOut=out;
   if(!out&&!inc) return "";
-  const pOut=fam?Object.values(budgets()).reduce((x,v)=>x+(v>0?v:0),0)*nm:0,pInc=fam?(S.settings.budInc||0)*nm:0,hasP=!!(pOut||pInc);
+  const PM=planMonth(),pOut=fam?PM.out*nm:0,pInc=fam?PM.inc*nm:0,hasP=!!(pOut||pInc);
   const row=(lab,p,r,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span>${hasP&&p!=null?eur(p):""}</span><span class="${cls||""}">${b?"<b>"+r+"</b>":r}</span></div>`;
   const tile=(lab,v,col)=>`<div><span>${col?`<i class="dot" style="background:${col};display:inline-block;margin-right:5px;vertical-align:-1px"></i>`:""}${lab}</span><b class="num">${eur(v)}</b><small>${out?Math.round(v/out*100):0}%</small></div>`;
   return `<section class="block"><div class="bh"><h2>${h(perIn()[0].toUpperCase()+perIn().slice(1))}</h2>${fam?`<button class="link" data-act="budget">${hasP?"Piano mensile":"Imposta il piano"}</button>`:""}</div>
     <div class="recon num"><span class="h"></span><span class="h">${hasP?"Previsto":""}</span><span class="h">Reale</span></div>
     ${row("Entrate",pInc||null,eur(inc))}
     ${row("Uscite",pOut||null,eur(out))}
-    ${row("Risultato",hasP?pInc-pOut:null,(res>=0?"+":"−")+eur(Math.abs(res)),res>=0?"ok":"ko",true)}
+    ${row("Netto",hasP?pInc-pOut:null,(res>=0?"+":"−")+eur(Math.abs(res)),res>=0?"ok":"ko",true)}
 
     ${patr>0.004?`<p class="hint">In più ${eur(patr)} pagate dal patrimonio: sono tra le spese ma non pesano sul risultato.</p>`:""}
     <div class="ribbon" aria-hidden="true">${Object.entries(m).filter(([,v])=>v>0).map(([k,v])=>`<i style="flex:${v};background:${MEZZI_COL[k]}"></i>`).join("")}</div>
@@ -1782,6 +1824,7 @@ document.addEventListener("click",async e=>{
   if(act==="prevm"){shiftPer(-1);render()}
   else if(act==="nextm"){shiftPer(1);render()}
   else if(act==="period") openPeriod();
+  else if(act==="gomonth"){setMonth(el.dataset.ym);render();window.scrollTo(0,0)}
   else if(act==="cardmovs"){const c=conti()[el.dataset.acc];if(!c)return;S.per={from:el.dataset.e,to:el.dataset.e};S.f={q:"",c:"",p:"",s:c.n,pb:""};S.msort="importo";S.view="movs";render();window.scrollTo(0,0)}
   else if(act==="reload"){location.reload()}
   else if(act==="page"){S.page=el.dataset.p;try{localStorage.setItem("sf-page",S.page)}catch(_){}S.hf.pb="";render()}
