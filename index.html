@@ -286,7 +286,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "25 · 16/11/2026";
+const APP_VERSION = "26 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -807,9 +807,11 @@ function buildRows(){
     let k=detectKind(desc,a,I.flow),gw=null;
     if(I.flow==="cc"&&k==="spesa"&&a<0){const w=cardCharge(d,a);if(w){k="giroconto";gw="Addebito carta: "+w}}
     if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownTransfer(d,a,I.acc,I.flow);if(w){k="giroconto";gw="Trasferimento tra i vostri conti: "+w}}
+    if(k==="entrata"&&RE_GENIUS.test(norm(desc))){k="spesa";gw="Rimborso del canone My Genius"}
     if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownName(extractMerchant(mdesc),I.holder);if(w){k="giroconto";gw="Bonifico con un vostro conto: "+titleCase(w)}}
     const tx={id,rk,d,a,x:desc,m:extractMerchant(mdesc),k,s:FLOWS[I.flow],acc:I.acc||undefined,p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
     if(k==="spesa"){const ac=autoCat(tx);if(ac){tx.c=ac.c;if(ac.p)tx.p=ac.p;tx.cb=ac.by}}
+    if(gw==="Rimborso del canone My Genius"){tx.c="banca";tx.cb="regola";const e=geniusRef(tx,S.all);if(e)tx.rif=[keyOf(e)||e.id]}
     // correzioni salvate da un import o da una modifica precedente
     const fx=fixFor(id);
     if(fx&&fx.del){I.gone++;continue}
@@ -980,6 +982,7 @@ function vHome(){
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
   </section>
   ${!filtered?vMonth(tx,nm,fam,J):""}
+  ${!filtered?vBridge(tx,fam,S.lastInc||0,S.lastOut||0):""}
   ${J?vJoint(J):""}
   ${!filtered?vRefunds(tx):""}
 
@@ -1204,6 +1207,8 @@ function spType(t){
 // Dal risultato alla variazione reale dei conti correnti della pagina: ogni euro che si muove deve trovare posto
 function bridge(tx,fam){
   const accs=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente"&&inPage({acc:k})).map(([k])=>k));
+  const open=shiftDay(S.per.from+"-01",-1),close=periodEnd();
+  let o=0,c2=0,miss=[];for(const k of accs){const a=balAt(k,open),b=balAt(k,close);if(a==null||b==null)miss.push(conti()[k].n);else{o+=a;c2+=b}}
   const on=tx.filter(t=>accs.has(t.acc));
   const D=sum(on);let patr=0,joint=0,others=0,charges=0;
   for(const t of on){
@@ -1218,7 +1223,27 @@ function bridge(tx,fam){
   }
   const cardSpend=-sum(tx.filter(t=>t.s===FLOWS.carta&&(t.k==="spesa"||t.k==="prelievo")));
   const prel=-sum(tx.filter(t=>t.k==="prelievo"&&!isPatr(t))),cash=-sum(tx.filter(t=>t.k==="spesa"&&t.s===CASH));
-  return {D,patr,joint,others,cardDiff:cardSpend-charges,cashAdj:Math.max(cash-prel,0),n:accs.size};
+  return {D,patr,joint,others,cardDiff:cardSpend-charges,cashAdj:Math.max(cash-prel,0),n:accs.size,open,close,o,c:c2,miss};
+}
+// Dal saldo iniziale al saldo finale dei conti correnti della pagina
+function vBridge(tx,fam,inc,out){
+  const B=bridge(tx,fam);if(!B.n)return "";
+  const sg=v=>(v>=0?"+":"−")+eur(Math.abs(v)),r=(lab,v,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span></span><span class="${cls||""}">${b?"<b>"+v+"</b>":v}</span></div>`;
+  const resid=B.D-(inc-out+B.patr+B.joint+B.others+B.cardDiff+B.cashAdj),ok=!B.miss.length;
+  const L=[];
+  L.push(r("Entrate",sg(inc)),r("Uscite",sg(-out)));
+  if(Math.abs(B.joint)>0.004)L.push(r(B.joint<=0?"Versato ai conti comuni":"Ricevuto dai conti comuni",sg(B.joint)));
+  if(Math.abs(B.patr)>0.004)L.push(r(B.patr<=0?"Versato ai risparmi":"Preso dai risparmi",sg(B.patr)));
+  if(Math.abs(B.others)>0.004)L.push(r(fam?"Da/verso altri conti vostri":"Da/verso altri conti (Fede, conti non importati)",sg(B.others)));
+  if(Math.abs(B.cardDiff)>0.004)L.push(r(B.cardDiff>=0?"Spese carta non ancora addebitate":"Addebiti carta di spese precedenti",sg(B.cardDiff)));
+  if(B.cashAdj>0.004)L.push(r("Contanti spesi oltre i prelievi",sg(B.cashAdj)));
+  if(Math.abs(resid)>1)L.push(r("Da verificare",sg(resid),"ko"));
+  return `<section class="block"><h2>${fam?"Saldi dei conti correnti":"Saldi dei tuoi conti"}</h2>
+    ${ok?r("Saldo al "+itDate(B.open),eur(B.o),"",true):""}
+    ${L.join("")}
+    ${ok?r("Saldo al "+itDate(B.close),eur(B.c),"",true):r("Variazione dei conti",sg(B.D),B.D>=0?"ok":"ko",true)}
+    <p class="hint" style="padding-bottom:10px">${ok?"":`Manca il saldo di ${h(B.miss.join(", "))}: impostalo in Impostazioni → Conti e carte per vedere i saldi di inizio e fine. `}${Math.abs(resid)>1?"“Da verificare”: movimenti che non trovano posto, di solito giroconti senza l’altro lato. ":""}Conti: ${h(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente"&&inPage({acc:k})).map(([,v])=>v.n).join(", "))}.</p>
+  </section>`;
 }
 // Riquadro "Il mese": entrate, uscite e risultato del corrente, con il previsto del piano e le uscite per mezzo e per tipo
 function vMonth(tx,nm,fam,J){
@@ -1229,6 +1254,7 @@ function vMonth(tx,nm,fam,J){
   m.contanti=Math.max(prel,cash);
   const ty={fissa:0,quotidiana:0,straordinaria:0};for(const t of cur) ty[spType(t)]-=t.a;ty.quotidiana+=Math.max(prel-cash,0);
   const out=m.carta+m.banca+m.dom+m.contanti,inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t))),res=inc-out;
+  S.lastInc=inc;S.lastOut=out;
   if(!out&&!inc) return "";
   const pOut=fam?Object.values(budgets()).reduce((x,v)=>x+(v>0?v:0),0)*nm:0,pInc=fam?(S.settings.budInc||0)*nm:0,hasP=!!(pOut||pInc);
   const row=(lab,p,r,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span>${hasP&&p!=null?eur(p):""}</span><span class="${cls||""}">${b?"<b>"+r+"</b>":r}</span></div>`;
@@ -1238,15 +1264,7 @@ function vMonth(tx,nm,fam,J){
     ${row("Entrate",pInc||null,eur(inc))}
     ${row("Uscite",pOut||null,eur(out))}
     ${row("Risultato",hasP?pInc-pOut:null,(res>=0?"+":"−")+eur(Math.abs(res)),res>=0?"ok":"ko",true)}
-    ${(()=>{const B=bridge(tx,fam);if(!B.n)return "";const sg=v=>(v>=0?"+":"−")+eur(Math.abs(v)),lines=[];
-      if(fam&&Math.abs(B.patr)>0.004)lines.push(row(B.patr<=0?"Messo da parte nel patrimonio":"Preso dal patrimonio",null,sg(B.patr)));
-      if(!fam&&Math.abs(B.joint)>0.004)lines.push(row(B.joint<=0?"Versato ai conti comuni":"Ricevuto dai conti comuni",null,sg(B.joint)));
-      if(Math.abs(B.others)>0.004)lines.push(row(fam?"Da/verso altri conti vostri":"Da/verso altri conti (Fede, conti non importati)",null,sg(B.others)));
-      if(Math.abs(B.cardDiff)>0.004)lines.push(row(B.cardDiff>=0?"Spese carta non ancora addebitate":"Addebiti carta di spese precedenti",null,sg(B.cardDiff)));
-      if(B.cashAdj>0.004)lines.push(row("Contanti spesi oltre i prelievi",null,sg(B.cashAdj)));
-      const resid=B.D-(res+B.patr+B.joint+B.others+B.cardDiff+B.cashAdj);
-      if(Math.abs(resid)>1)lines.push(row("Da verificare",null,sg(resid),"ko"));
-      return lines.join("")+row(fam?"Variazione dei conti correnti":"Variazione dei tuoi conti",null,sg(B.D),B.D>=0?"ok":"ko",true)+(Math.abs(resid)>1?`<p class="hint">“Da verificare”: movimenti che non trovano posto, di solito giroconti senza l’altro lato o spese in contanti registrate senza prelievo. La variazione è la somma reale dei movimenti dei conti.</p>`:"");})()}
+
     ${patr>0.004?`<p class="hint">In più ${eur(patr)} pagate dal patrimonio: sono tra le spese ma non pesano sul risultato.</p>`:""}
     <div class="ribbon" aria-hidden="true">${Object.entries(m).filter(([,v])=>v>0).map(([k,v])=>`<i style="flex:${v};background:${MEZZI_COL[k]}"></i>`).join("")}</div>
     <div class="mz">${Object.keys(MEZZI).map(k=>tile(MEZZI[k],m[k],MEZZI_COL[k])).join("")}</div>
@@ -1255,6 +1273,21 @@ function vMonth(tx,nm,fam,J){
   </section>`;
 }
 // ---------- Rimborsi ----------
+// UniCredit My Genius: la "ricarica conto My Genius bonus" restituisce parte del canone ("My Genius: costo fisso mese di ...")
+const RE_GENIUS=/my genius.{0,20}bonus|ricarica conto my genius/i;
+function geniusRef(t,pool){
+  const mm=norm(t.x||"").match(/mese di (\w+)/),mon=mm&&mm[1];
+  const c=pool.filter(e=>e.acc===t.acc&&e.k==="spesa"&&e.a<0&&/my genius.{0,10}costo fisso/.test(norm(e.x||""))&&(!mon||norm(e.x||"").includes("mese di "+mon))&&dayDiff(e.d,t.d)<=62);
+  c.sort((a,b)=>dayDiff(a.d,t.d)-dayDiff(b.d,t.d));return c[0]||null;
+}
+// Movimenti già caricati: la ricarica Genius ancora segnata come entrata diventa rimborso del canone (non tocca le scelte a mano)
+async function fixGenius(){
+  if(S.genRun||!S.canWrite)return;
+  const l=S.all.filter(t=>t.k==="entrata"&&t.cb!=="manuale"&&RE_GENIUS.test(norm(t.x||"")));if(!l.length)return;
+  S.genRun=true;
+  try{await putTx(l.map(t=>{const e=geniusRef(t,S.all);return {...t,k:"spesa",a:Math.abs(t.a),c:"banca",cb:"regola",...(e?{rif:[keyOf(e)||e.id]}:{})}}))}catch(e){}
+  S.genRun=false;
+}
 // Un'entrata abbinata a una o più spese diventa un rimborso: spesa positiva nella stessa categoria, a costo resta il netto
 const RE_RIMB=/(blue assistance|assistenza sanitaria|unisalute|previmedical|caspie|\bfasi\b|rimborso|rimb\b|sinistro|reso\b|storno)/i;
 function refOf(k){return keyMap()[k]||S.byId[k]||null}
@@ -2020,7 +2053,7 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
     S.authed=!!u;S.uid=u?u.email:null;
     if(!u){S.months={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
     const denied=err=>{if(err&&err.code==="permission-denied"){S.authMsg="Questo account non è autorizzato a usare l’app.";signOut(S.auth)}else toast("Connessione ai dati persa: ricarica la pagina.")};
-    unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes();fixGenius()},denied));
     unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render();S.loadedSettings=true;migrateFixes()},denied));
     render();
   });
