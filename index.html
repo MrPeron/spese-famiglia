@@ -274,11 +274,11 @@ textarea{min-height:110px;resize:vertical}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, setDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, setDoc, getDoc, getDocs, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "19 · 16/11/2026";
+const APP_VERSION = "20 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -567,6 +567,61 @@ function errMsg(e){
   return "Salvataggio non riuscito: controlla la connessione e riprova.";
 }
 
+// ---------- Impronta e correzioni ----------
+// Impronta di un movimento importato: conto + data + importo + ordine tra i movimenti uguali dello stesso giorno.
+// Non dipende dalla pulizia della descrizione né da chi paga: resta uguale anche quando migliora il riconoscimento.
+// importo senza segno: se correggete il segno (spesa/rimborso) il movimento resta riconoscibile
+function fpKey(acc,d,a,n){return "k"+d.replace(/-/g,"")+"_"+hash(acc+"|"+Math.round(Math.abs(a)*100)+"|"+n)}
+function keyYm(k){return k.slice(1,5)+"-"+k.slice(5,7)}
+// Impronte dei movimenti già salvati; quelli importati con le versioni precedenti hanno un id diverso e la si calcola qui
+function keyMap(){
+  if(keyMap.v===S.ver) return keyMap.m;
+  const m={},byId={},groups={};
+  for(const t of S.all){if(!t.acc)continue;if(/^k\d{8}_/.test(t.id)){m[t.id]=t;byId[t.id]=t.id;continue}const g=t.acc+"|"+t.d+"|"+Math.round(Math.abs(t.a)*100);(groups[g]=groups[g]||[]).push(t)}
+  for(const list of Object.values(groups)){list.sort((x,y)=>norm(x.x).localeCompare(norm(y.x))||(x.t||0)-(y.t||0));list.forEach((t,n)=>{const k=fpKey(t.acc,t.d,t.a,n);m[k]=t;byId[t.id]=k})}
+  keyMap.v=S.ver;keyMap.m=m;keyMap.byId=byId;return m;
+}
+function keyOf(t){if(!t||!t.acc)return null;if(/^k\d{8}_/.test(t.id))return t.id;keyMap();return keyMap.byId[t.id]||null}
+
+// Archivio delle correzioni (documenti "fixes/AAAA-MM"): si legge solo durante un import, si scrive a ogni modifica a mano
+S.fixes={};
+async function loadFixes(yms){
+  for(const ym of yms) if(!S.fixes[ym]){try{const d=await getDoc(doc(S.db,"fixes",ym));S.fixes[ym]=(d.exists()&&d.data().f)||{}}catch(e){S.fixes[ym]={}}}
+}
+function fixFor(k){const m=S.fixes[keyYm(k)];return m&&m[k]}
+async function saveFixes(entries){
+  const by={};
+  for(const [k,f] of entries){if(!k)continue;const clean={};for(const [n,v] of Object.entries(f))if(v!==undefined&&v!==null&&v!=="")clean[n]=v;(by[keyYm(k)]=by[keyYm(k)]||{})[k]=clean}
+  for(const [ym,map] of Object.entries(by)){
+    await setDoc(doc(S.db,"fixes",ym),{f:map},{merge:true});
+    if(S.fixes[ym]) for(const [k,f] of Object.entries(map)) S.fixes[ym][k]={...(S.fixes[ym][k]||{}),...f};
+  }
+}
+// Quello che si salva di un movimento corretto a mano: tipo, segno, categoria, persone, nome, nota
+function fixFields(t,cb){
+  const f={k:t.k,a:t.a,p:t.p,pb:t.pb,m:t.m,n:t.n,cb};
+  if(t.k==="spesa")f.c=t.c||"altro";
+  if(cb==="Claude"){f.fc=t.f;delete f.k;delete f.a;delete f.p;delete f.pb}
+  return f;
+}
+function applyFix(tx,fx){
+  if(fx.k){tx.k=fx.k;if(fx.k!=="spesa")tx.c=null;else if(!tx.c)tx.c="altro"}
+  if(fx.c&&tx.k==="spesa")tx.c=fx.c;
+  for(const n of ["p","pb","m","n"]) if(fx[n])tx[n]=fx[n];
+  if(fx.a&&Math.abs(Math.abs(fx.a)-Math.abs(tx.a))<0.005)tx.a=fx.a;
+  tx.cb=fx.cb||"manuale";tx.f=fx.fc??null;tx.gw=null;tx.fixed=true;
+}
+// Prima apertura di questa versione: salva nell'archivio le correzioni a mano e le categorie di Claude già fatte
+async function migrateFixes(){
+  if(S.migr||!S.loadedMonths||!S.loadedSettings||S.settings.fixMig||!S.canWrite) return;
+  S.migr=true;
+  const list=S.all.filter(t=>t.acc&&(t.cb==="manuale"||t.cb==="Claude")).map(t=>[keyOf(t),fixFields(t,t.cb)]);
+  try{if(list.length)await saveFixes(list);await saveSettings({fixMig:APP_VERSION});if(list.length)toast("Salvate "+list.length+" correzioni: resteranno valide anche dopo un ricaricamento")}catch(e){S.migr=false}
+}
+async function countFixes(){
+  try{const snap=await getDocs(collection(S.db,"fixes"));let n=0;snap.docs.forEach(d=>{n+=Object.keys((d.data()&&d.data().f)||{}).length});return {n,ids:snap.docs.map(d=>d.id)}}catch(e){return null}
+}
+
 // ---------- Lettura file banca ----------
 function detectDelim(text){
   const lines=text.split(/\r?\n/).slice(0,25);let best=";",score=-1;
@@ -689,6 +744,8 @@ async function handleFile(file){
       for(let r=found.hdr+1;r<grid.length;r++){const row=grid[r]||[];const n=num(row[S.imp.map.a]);if(isNaN(n)||n===0)continue;const dsc=norm(xi>=0?row[xi]:"");if(RE_SALDO.test(dsc)||RE_GIRO.test(dsc)||RE_STORNO.test(dsc))continue;tot++;if(n>0)pos++}
       if(tot>=(flow==="carta"?2:3)&&pos/tot>(flow==="carta"?0.5:0.75)) S.imp.invert=true;
     }
+    const yms=new Set();for(let r=found.hdr+1;r<grid.length;r++){const d=toISO((grid[r]||[])[S.imp.map.d]);if(d)yms.add(ymOf(d))}
+    await loadFixes([...yms]);
     buildRows();
     S.view="imp";render();
   }catch(e){toast(e.message||"Non riesco a leggere il file.")}
@@ -707,10 +764,24 @@ function bankBal(I){
   return out;
 }
 function buildRows(){
-  const I=S.imp,g=I.grid,mp=I.map,out=[],seen={};
+  const I=S.imp,g=I.grid,mp=I.map,out=[],seen={},raws=[];
   if(mp.d<0||(mp.a<0&&mp.deb<0&&mp.cre<0)){I.rows=[];return}
+  // primo passaggio: data, importo e testo originale, per numerare i movimenti uguali dello stesso giorno
   for(let r=I.hdr+1;r<g.length;r++){
     const row=g[r]||[];const d=toISO(row[mp.d]);if(!d) continue;
+    let a;
+    if(mp.a>=0) a=num(row[mp.a]);
+    else{const de=mp.deb>=0?num(row[mp.deb]):NaN,cr=mp.cre>=0?num(row[mp.cre]):NaN;a=(isNaN(de)&&isNaN(cr))?NaN:(isNaN(cr)?0:Math.abs(cr))-(isNaN(de)?0:Math.abs(de))}
+    if(isNaN(a)||a===0) continue;
+    if(I.invert&&mp.a>=0) a=-a;
+    a=Math.round(a*100)/100;
+    raws.push({r,d,a,raw:norm([mp.x1,mp.x2,mp.x3].filter(i=>i!=null&&i>=0).map(i=>String(row[i]??"")).join(" "))});
+  }
+  const grp={};for(const x of raws){const k=x.d+"|"+Math.round(Math.abs(x.a)*100);(grp[k]=grp[k]||[]).push(x)}
+  for(const list of Object.values(grp)){list.sort((x,y)=>x.raw.localeCompare(y.raw)||x.r-y.r);list.forEach((x,n)=>{x.key=fpKey(I.acc||"",x.d,x.a,n)})}
+  const known=keyMap();I.gone=0;
+  for(const x of raws){const r=x.r;
+    const row=g[r]||[];const d=x.d;
     // più colonne di descrizione: tolgo i doppioni (BBVA ripete "Movimento" in "Osservazioni")
     const parts=[];
     for(const i of [mp.x1,mp.x2,mp.x3]){if(i==null||i<0)continue;const v=cleanDesc(row[i]);if(!v||/^\d{1,4}$/.test(v))continue;const nv=norm(v);
@@ -719,23 +790,19 @@ function buildRows(){
     // il nome dell'esercente non viene dalla colonna del tipo di operazione ("Bonifico eseguito"), se c'è altro
     const named=parts.filter(q=>!COLRE.xt.test(norm(I.cols[q.i]||"")));
     const mdesc=(named.length?named:parts).map(q=>q.v).join(" ");
-    let a;
-    if(mp.a>=0) a=num(row[mp.a]);
-    else{const de=mp.deb>=0?num(row[mp.deb]):NaN,cr=mp.cre>=0?num(row[mp.cre]):NaN;a=(isNaN(de)&&isNaN(cr))?NaN:(isNaN(cr)?0:Math.abs(cr))-(isNaN(de)?0:Math.abs(de))}
-    if(isNaN(a)||a===0) continue;
-    if(I.invert&&mp.a>=0) a=-a;
-    a=Math.round(a*100)/100;
-    const base=d+"|"+a+"|"+norm(desc)+"|"+FLOWS[I.flow];seen[base]=(seen[base]||0)+1;
-    const rk=base+"|"+seen[base];
-    const id="b"+hash(rk+"|"+I.payer);
+    const a=x.a,id=x.key,rk=id;
     let k=detectKind(desc,a,I.flow),gw=null;
     if(I.flow==="cc"&&k==="spesa"&&a<0){const w=cardCharge(d,a);if(w){k="giroconto";gw="Addebito carta: "+w}}
     if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownTransfer(d,a,I.acc,I.flow);if(w){k="giroconto";gw="Trasferimento tra i vostri conti: "+w}}
     if(!gw&&I.flow!=="carta"&&(k==="spesa"||k==="entrata")){const w=ownName(extractMerchant(mdesc),I.holder);if(w){k="giroconto";gw="Bonifico con un vostro conto: "+titleCase(w)}}
     const tx={id,rk,d,a,x:desc,m:extractMerchant(mdesc),k,s:FLOWS[I.flow],acc:I.acc||undefined,p:I.person,pb:I.payer,c:k==="spesa"?"":null,cb:null,f:null,gw};
     if(k==="spesa"){const ac=autoCat(tx);if(ac){tx.c=ac.c;if(ac.p)tx.p=ac.p;tx.cb=ac.by}}
+    // correzioni salvate da un import o da una modifica precedente
+    const fx=fixFor(id);
+    if(fx&&fx.del){I.gone++;continue}
+    if(fx) applyFix(tx,fx);
     const e=I.edits[rk];if(e)Object.assign(tx,e);
-    tx.dup=!!S.byId[id];
+    tx.dup=!!(S.byId[id]||known[id]);
     out.push(tx);
   }
   out.sort(I.sort==="data"?(x,y)=>y.d.localeCompare(x.d):I.sort==="nome"?(x,y)=>String(x.m).localeCompare(String(y.m),"it")||y.d.localeCompare(x.d):(x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
@@ -815,6 +882,11 @@ async function saveImport(){
   const btn=$("#saveImp");if(btn)btn.disabled=true;
   try{
     await putTx(list);
+    const fx=[];
+    for(const r of rows){const e=I.edits[r.rk];
+      if(e&&Object.keys(e).some(n=>["k","c","p","m"].includes(n))&&e.cb!=="Claude") fx.push([r.id,{...fixFields({...r,c:r.k==="spesa"?(r.c||"altro"):null},"manuale")}]);
+      else if(r.cb==="Claude"&&r.c) fx.push([r.id,fixFields(r,"Claude")]);}
+    if(fx.length) await saveFixes(fx);
     // l'altro lato di un trasferimento, importato prima da un altro conto, diventa anche lui giroconto
     const fix=[];
     for(const r of list) if(r.k==="giroconto"&&r.acc){const o=counterpart(r);if(o&&o.acc&&(o.k==="spesa"||o.k==="entrata")&&o.cb!=="manuale"&&!fix.includes(o))fix.push(o)}
@@ -1236,7 +1308,7 @@ function vImp(){
     ${I.map.a>=0?`<label class="check"><input type="checkbox" id="inv" ${I.invert?"checked":""}><span>Gli importi positivi sono spese (tipico degli estratti della carta di credito)</span></label>`:""}
     ${mapOk&&I.map.x1<0?`<p class="banner">Non trovo la colonna con la descrizione dei movimenti: sceglila qui sopra in “Descrizione”. Senza, i movimenti arrivano senza nome e non riesco a riconoscere giroconti ed esercenti.</p>`:""}
     ${!mapOk?`<p class="banner">Indica almeno la colonna della data e quella dell’importo.</p>`:`
-    <div class="stats"><span>${fresh.length} nuovi</span>${dups?`<span>${dups} già presenti</span>`:""}<span>${ruleN} classificati in automatico</span>${noCat?`<span style="background:var(--ochre-soft)">${noCat} da classificare</span>`:""}</div>
+    <div class="stats"><span>${fresh.length} nuovi</span>${I.gone?`<span>${I.gone} eliminati da voi in passato, saltati</span>`:""}${fresh.some(r=>r.fixed)?`<span>${fresh.filter(r=>r.fixed).length} con correzioni salvate</span>`:""}${dups?`<span>${dups} già presenti</span>`:""}<span>${ruleN} classificati in automatico</span>${noCat?`<span style="background:var(--ochre-soft)">${noCat} da classificare</span>`:""}</div>
     ${I.ai?`<p class="progress">Riconosco i beneficiari… ${I.ai.done}/${I.ai.tot} esercenti${I.searches?", "+I.searches+" ricerche online":""}</p>`:""}
     <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="isort" data-s="importo" aria-pressed="${I.sort!=="data"&&I.sort!=="nome"}">Per importo</button><button data-act="isort" data-s="data" aria-pressed="${I.sort==="data"}">Per data</button><button data-act="isort" data-s="nome" aria-pressed="${I.sort==="nome"}">Per nome</button></div><span class="hint" style="margin:0">Totale spese ${eur(-sum(exp))}</span></div>
     ${fresh.map(r=>pRow(r)).join("")}
@@ -1311,10 +1383,12 @@ async function saveEdit(){
       await putTx(changes);
       await saveSettings({rules:{[key]:{c:nt.c,p:nt.p}}});
     } else await putTx(changes);
+    if(t.acc) await saveFixes([[keyOf(t),fixFields(nt,"manuale")]]);
     closeSheet();toast(changes.length>1?`Salvato, aggiornati altri ${changes.length-1} movimenti`:"Modifiche salvate");
   }catch(e){toast(errMsg(e))}
 }
 function openSettings(){
+  setTimeout(async()=>{const r=await countFixes();S.fixIds=r?r.ids:[];const el=$("#fixn");if(el)el.textContent=r?String(r.n):"non disponibile"},0);
   S.sheet={type:"settings"};
   const rules=Object.entries(S.settings.rules||{}).filter(([,v])=>v&&v.c).sort((a,b)=>a[0].localeCompare(b[0]));
   const lc={};for(const t of S.all) if(t.s!==CASH&&!conti()[t.acc]) lc[t.s]=(lc[t.s]||0)+1;
@@ -1341,6 +1415,11 @@ function openSettings(){
       ${S.confirmClear==="__all"?`<div class="banner" style="margin:0">Eliminare tutti i ${n} movimenti importati, di qualsiasi conto? ${c?(c===1?"La spesa in contanti resta. ":"Le "+c+" spese in contanti restano. "):""}Conti, regole e categorie restano.
         <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearall">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
       :`<button class="link" data-act="askclear" data-k="__all" style="color:var(--danger)">Elimina tutti i movimenti importati (${n})</button><p class="hint">Anche quelli che non risultano collegati a nessun conto. Le spese in contanti restano.</p>`}</div>`:""})()}
+    <div class="field"><div class="lab">Correzioni salvate: <span id="fixn">…</span></div>
+      <p class="hint">Tipo, categoria, persone, nomi, segno ed eliminazioni decisi da voi sui singoli movimenti, e le categorie trovate da Claude. Vengono riapplicati a ogni import, anche dopo aver svuotato e ricaricato.</p>
+      ${S.confirmClear==="__fix"?`<div class="banner" style="margin:0">Azzerare tutte le correzioni salvate? I movimenti già caricati non cambiano, ma un nuovo caricamento non le riapplicherà più.
+        <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearfix">Azzera le correzioni</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
+      :`<button class="link" data-act="askclear" data-k="__fix" style="color:var(--danger)">Azzera le correzioni</button>`}</div>
     ${contoForm("sc")}
     <div class="field"><label for="sown">Altri conti vostri che non importate (uno per riga)</label><textarea id="sown" style="min-height:70px">${h((S.settings.own||[]).join("\n"))}</textarea>
       <p class="hint">I bonifici verso o da questi nomi sono giroconti, non spese o entrate. Gli intestatari dei conti importati (${h(contoList().map(([,v])=>v.holder).filter(Boolean).join(", ")||"nessuno ancora")}) li riconosco già.</p>
@@ -1504,7 +1583,7 @@ document.addEventListener("click",async e=>{
     document.querySelectorAll("[data-b]").forEach(x=>{const v=A.cat[x.dataset.b]||0;x.value=v>=5?String(Math.max(10,round10(v))):""});
     updatePlan();toast("Proposta dalle medie: controlla e salva");
   }
-  else if(act==="mkgiro"){const t=S.byId[el.dataset.id];if(!t)return;el.disabled=true;try{await putTx([{...t,k:"giroconto",c:null,cb:"manuale"}]);toast("Segnato come giroconto: non conta più come spesa o entrata")}catch(err){toast(errMsg(err));el.disabled=false}}
+  else if(act==="mkgiro"){const t=S.byId[el.dataset.id];if(!t)return;el.disabled=true;try{await putTx([{...t,k:"giroconto",c:null,cb:"manuale"}]);if(t.acc)await saveFixes([[keyOf(t),{k:"giroconto",cb:"manuale"}]]);toast("Segnato come giroconto: non conta più come spesa o entrata")}catch(err){toast(errMsg(err));el.disabled=false}}
   else if(act==="settings") openSettings();
   else if(act==="close") closeSheet();
   else if(act==="filtercat"){S.f={q:"",c:el.dataset.c,p:S.hf.p,s:"",pb:S.hf.pb};S.view="movs";render();window.scrollTo(0,0)}
@@ -1512,7 +1591,7 @@ document.addEventListener("click",async e=>{
   else if(act==="clearf"){S.f={q:"",c:"",p:"",s:"",pb:""};render()}
   else if(act==="edit") openEdit(el.dataset.id);
   else if(act==="saveedit") saveEdit();
-  else if(act==="deltx"){const t=S.byId[S.sheet&&S.sheet.id];if(t&&confirm("Eliminare questo movimento?")){try{await delTx(t);closeSheet();toast("Movimento eliminato")}catch(err){toast(errMsg(err))}}}
+  else if(act==="deltx"){const t=S.byId[S.sheet&&S.sheet.id];if(t&&confirm("Eliminare questo movimento?")){try{const k=keyOf(t);await delTx(t);if(k)await saveFixes([[k,{del:1}]]);closeSheet();toast(k?"Movimento eliminato: non verrà reimportato":"Movimento eliminato")}catch(err){toast(errMsg(err))}}}
   else if(act==="cday"){S.cash.d=shiftDay(today(),Number(el.dataset.n));render()}
   else if(act==="cfreq"){const t=S.byId[el.dataset.id];if(t){Object.assign(S.cash,{k:"spesa",a:String(-t.a).replace(".",","),w:t.m,c:t.c||"altro",p:t.p||members()[0],pb:t.pb||S.cash.pb});render();const a=$("#ca");if(a){a.focus();a.select()}}}
   else if(act==="ck"){S.cash.k=el.dataset.k;render()}
@@ -1531,6 +1610,10 @@ document.addEventListener("click",async e=>{
   }
   else if(act==="askclear"){S.confirmClear=el.dataset.k;openSettings()}
   else if(act==="noclear"){S.confirmClear=null;openSettings()}
+  else if(act==="clearfix"){
+    el.disabled=true;
+    try{for(const id of S.fixIds||[]) await setDoc(doc(S.db,"fixes",id),{f:deleteField()},{merge:true});S.fixes={};S.confirmClear=null;toast("Correzioni azzerate");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
+  }
   else if(act==="clearall"){
     const list=S.all.filter(t=>t.s!==CASH);el.disabled=true;
     try{await delTxList(list);S.confirmClear=null;toast("Eliminati "+list.length+" movimenti");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
@@ -1640,7 +1723,7 @@ document.addEventListener("change",async e=>{
     const list=S.all.filter(x=>x.k==="spesa"&&(mkey(x.m)||norm(x.m)||"?")===key&&x[field]!==val).map(x=>({...x,[field]:val,cb:"manuale",f:null}));
     const rule={...((S.settings.rules||{})[key]||{})};rule[field]=val;if(!rule.c){const any=S.all.find(x=>x.k==="spesa"&&mkey(x.m)===key);rule.c=(field==="c"?val:(any&&any.c)||"altro")}
     t.disabled=true;
-    try{if(list.length)await putTx(list);if(mkey(key)===key&&key!=="?")await saveSettings({rules:{[key]:rule}});toast(list.length?(list.length===1?"Aggiornato 1 movimento":`Aggiornati ${list.length} movimenti`):"Già tutti così")}catch(err){toast(errMsg(err))}
+    try{if(list.length){await putTx(list);await saveFixes(list.filter(x=>x.acc).map(x=>[keyOf(S.byId[x.id]||x),{[field]:val,cb:"manuale"}]))}if(mkey(key)===key&&key!=="?")await saveSettings({rules:{[key]:rule}});toast(list.length?(list.length===1?"Aggiornato 1 movimento":`Aggiornati ${list.length} movimenti`):"Già tutti così")}catch(err){toast(errMsg(err))}
     t.disabled=false;return;
   }
   if(id==="inclgiro"){S.inclGiro=t.checked;render();return}
@@ -1697,8 +1780,8 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
     S.authed=!!u;S.uid=u?u.email:null;
     if(!u){S.months={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
     const denied=err=>{if(err&&err.code==="permission-denied"){S.authMsg="Questo account non è autorizzato a usare l’app.";signOut(S.auth)}else toast("Connessione ai dati persa: ricarica la pagina.")};
-    unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render()},denied));
-    unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes()},denied));
+    unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render();S.loadedSettings=true;migrateFixes()},denied));
     render();
   });
 })();
