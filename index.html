@@ -252,7 +252,7 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .mrow.avg{color:var(--muted)}
 .mrow .ok{color:var(--ok);font-weight:600}
 .mrow .ko{color:var(--danger);font-weight:600}
-.mz{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 0}
+.mz{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:10px 0 0}
 .mz.three{grid-template-columns:repeat(3,1fr)}
 .mz>div{background:var(--sunk);border-radius:10px;padding:8px 10px;min-width:0}
 .mz span{display:block;color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -299,7 +299,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "27 · 16/11/2026";
+const APP_VERSION = "28 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -365,7 +365,7 @@ const RE_GIRO = /(giroconto|giro conto|girofondo|trasferimento (da|su|a) conto|s
 const S = {
   db:null, auth:null, authed:null, authMsg:"", uid:null, local:false, canWrite:true,
   months:{}, settings:clone(DEFAULTS), all:[], byId:{},
-  view:"home", page:(()=>{try{return localStorage.getItem("sf-page")||"Famiglia"}catch(e){return "Famiglia"}})(), inclGiro:false, per:{from:ymOf(today()),to:ymOf(today())}, hf:{p:"",pb:"",c:""}, f:{q:"",c:"",p:"",s:"",pb:""}, msort:"data",
+  view:"home", page:(()=>{try{return localStorage.getItem("sf-page")||"Famiglia"}catch(e){return "Famiglia"}})(), per:{from:ymOf(today()),to:ymOf(today())}, hf:{p:"",pb:"",c:""}, f:{q:"",c:"",p:"",s:"",pb:""}, msort:"data",
   cash:null, imp:null, dirty:false, names:{}
 };
 rebuildCats();
@@ -947,7 +947,7 @@ function vHome(){
   const tx=perTx().filter(inPage),sp=spOf(tx);
   const prevPer=S.all.filter(t=>{const ym=ymOf(t.d);return ym>=shiftYM(S.per.from,-nm)&&ym<=shiftYM(S.per.to,-nm)});
   const J=fam?null:jointFlows(tx);
-  const addJ=J&&S.inclGiro?Math.max(J.net,0):0;
+  const addJ=0;
   const noCashF=!f.c&&!f.p,unatt=noCashF?cashUnatt(tx):0;
   const tot=-sum(sp)+unatt+addJ,prev=-sum(spOf(prevPer))+(noCashF?cashUnatt(prevPer.filter(inPage)):0);
   const byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});if(unatt>0.004)byC._cash=unatt;
@@ -1109,10 +1109,10 @@ function jointFlows(tx){
 function vJoint(J){
   if(!J.groups.length) return "";
   return `<section class="block"><h2>Conti comuni e giroconti</h2>
-    <p class="hint">Non sono spese: soldi spostati tra i vostri conti ${h(perIn())}.</p>
+    <p class="hint">Soldi spostati tra i vostri conti ${h(perIn())}. Il netto versato a Widiba conta tra le tue spese; quello verso i risparmi no.</p>
     <div class="recon num"><span class="h">Conto</span><span class="h">Versato</span><span class="h">Ricevuto</span></div>
     ${J.groups.map(g=>`<div class="recon num"><span>${h(g.name)}${g.joint?` <span class="hint" style="margin:0">· comune</span>`:""}</span><span>${eur(g.out)}</span><span>${eur(g.in)}</span></div>`).join("")}
-    ${J.groups.some(g=>g.joint)?`<label class="check"><input type="checkbox" id="inclgiro" ${S.inclGiro?"checked":""}><span>Conta tra le uscite il netto versato ai conti comuni: ${eur(J.net)}</span></label>`:`<div style="height:10px"></div>`}
+    <div style="height:10px"></div>
   </section>`;
 }
 
@@ -1190,8 +1190,17 @@ function vPatr(tx){
   </section>`;
 }
 // ---------- Mezzi di pagamento e tipi di spesa ----------
-const MEZZI={carta:"Carta di credito",banca:"Banca",dom:"Domiciliazioni",contanti:"Contanti"};
-const MEZZI_COL={carta:"#6E5BB8",banca:"#3B7EA1",dom:"#B8730F",contanti:"#3E8E5A"};
+const MEZZI={carta:"Carta di credito",banca:"Banca",dom:"Domiciliazioni",contanti:"Contanti",comuni:"Conti comuni"};
+const MEZZI_COL={carta:"#6E5BB8",banca:"#3B7EA1",dom:"#B8730F",contanti:"#3E8E5A",comuni:"#C0504D"};
+// Pagina personale: il netto versato ai conti comuni correnti (Widiba) è una spesa di chi versa; verso BBVA sono risparmi
+function jointNet(tx){
+  if(isFam())return 0;
+  const accs=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente"&&inPage({acc:k})).map(([k])=>k));
+  let n=0;
+  for(const t of tx){if(!accs.has(t.acc)||t.k!=="giroconto"||isCardText(t)||isVincolo(norm((t.x||"")+" "+(t.m||""))))continue;
+    const c=counterpart(t),ca=c&&conti()[c.acc];if(ca&&ca.pb===JOINT&&ruolo(c.acc)==="corrente")n-=t.a}
+  return n;
+}
 function isSdd(t){return /(\bsdd\b|addebito diretto|sepa dd)/.test(norm((t.x||"")+" "+(t.m||"")))}
 function mezzo(t){if(t.s===CASH||t.k==="prelievo")return "contanti";if(t.s===FLOWS.carta)return "carta";return isSdd(t)?"dom":"banca"}
 // Contanti: contano i prelievi; le spese in contanti registrate dicono solo dove sono finiti. Il resto è "non attribuito".
@@ -1248,10 +1257,11 @@ function bridge(tx,fam){
 function vBridge(tx,fam,inc,out){
   const B=bridge(tx,fam);if(!B.n)return "";
   const sg=v=>(v>=0?"+":"−")+eur(Math.abs(v)),r=(lab,v,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span></span><span class="${cls||""}">${b?"<b>"+v+"</b>":v}</span></div>`;
-  const resid=B.D-(inc-out+B.patr+B.joint+B.others+B.cardDiff+B.cashAdj),ok=!B.miss.length;
+  // nelle pagine personali il versato ai conti comuni è già tra le uscite
+  const jt=fam?B.joint:0,resid=B.D-(inc-out+B.patr+jt+B.others+B.cardDiff+B.cashAdj),ok=!B.miss.length;
   const L=[];
-  L.push(r("Entrate",sg(inc)),r("Uscite",sg(-out)));
-  if(Math.abs(B.joint)>0.004)L.push(r(B.joint<=0?"Versato ai conti comuni":"Ricevuto dai conti comuni",sg(B.joint)));
+  L.push(r("Entrate",sg(inc)),r(fam?"Uscite":"Uscite (compreso il versato ai conti comuni)",sg(-out)));
+  if(fam&&Math.abs(B.joint)>0.004)L.push(r(B.joint<=0?"Versato ai conti comuni":"Ricevuto dai conti comuni",sg(B.joint)));
   if(Math.abs(B.patr)>0.004)L.push(r(B.patr<=0?"Versato ai risparmi":"Preso dai risparmi",sg(B.patr)));
   if(Math.abs(B.others)>0.004)L.push(r(fam?"Da/verso altri conti vostri":"Da/verso altri conti (Fede, conti non importati)",sg(B.others)));
   if(Math.abs(B.cardDiff)>0.004)L.push(r(B.cardDiff>=0?"Spese carta non ancora addebitate":"Addebiti carta di spese precedenti",sg(B.cardDiff)));
@@ -1273,7 +1283,8 @@ function monthNums(tx){
   const prel=-sum(tx.filter(t=>t.k==="prelievo"&&!isPatr(t))),cash=-sum(cur.filter(t=>t.s===CASH));
   m.contanti=Math.max(prel,cash);
   const ty={fissa:0,quotidiana:0,straordinaria:0};for(const t of cur) ty[spType(t)]-=t.a;ty.quotidiana+=Math.max(prel-cash,0);
-  const out=m.carta+m.banca+m.dom+m.contanti,inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t)));
+  m.comuni=jointNet(tx);ty.fissa+=m.comuni;
+  const out=m.carta+m.banca+m.dom+m.contanti+m.comuni,inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t)));
   return {m,ty,prel,cash,patr,out,inc,net:inc-out};
 }
 function planMonth(){return {inc:S.settings.budInc||0,out:Object.values(budgets()).reduce((x,v)=>x+(v>0?v:0),0)}}
@@ -1309,7 +1320,7 @@ function vMonth(tx,nm,fam,J){
 
     ${patr>0.004?`<p class="hint">In più ${eur(patr)} pagate dal patrimonio: sono tra le spese ma non pesano sul risultato.</p>`:""}
     <div class="ribbon" aria-hidden="true">${Object.entries(m).filter(([,v])=>v>0).map(([k,v])=>`<i style="flex:${v};background:${MEZZI_COL[k]}"></i>`).join("")}</div>
-    <div class="mz">${Object.keys(MEZZI).map(k=>tile(MEZZI[k],m[k],MEZZI_COL[k])).join("")}</div>
+    <div class="mz">${Object.keys(MEZZI).filter(k=>k!=="comuni"||!fam).map(k=>tile(MEZZI[k],m[k],MEZZI_COL[k])).join("")}</div>
     <div class="mz three">${Object.keys(TIPI).map(k=>tile(TIPI[k],ty[k])).join("")}</div>
     ${m.contanti>cash+0.004?`<p class="hint" style="padding-bottom:6px">Contanti: ${eur(prel)} prelevati, ${eur(cash)} attribuiti a una categoria in Contanti.</p>`:`<div style="height:6px"></div>`}
   </section>`;
@@ -2042,7 +2053,6 @@ document.addEventListener("change",async e=>{
     try{if(list.length){await putTx(list);await saveFixes(list.filter(x=>x.acc).map(x=>[keyOf(S.byId[x.id]||x),{[field]:val,cb:"manuale"}]))}if(mkey(key)===key&&key!=="?")await saveSettings({rules:{[key]:rule}});toast(list.length?(list.length===1?"Aggiornato 1 movimento":`Aggiornati ${list.length} movimenti`):"Già tutti così")}catch(err){toast(errMsg(err))}
     t.disabled=false;return;
   }
-  if(id==="inclgiro"){S.inclGiro=t.checked;render();return}
   if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
   if(id==="cd"&&S.cash){const d=readDate("cd");if(d)S.cash.d=d;return}
   const I=S.imp;if(!I) return;
