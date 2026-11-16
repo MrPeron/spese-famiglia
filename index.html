@@ -278,7 +278,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "20 · 16/11/2026";
+const APP_VERSION = "21 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -374,6 +374,11 @@ function conti(){return S.settings.conti||{}}
 function contoList(){return Object.entries(conti()).filter(([,v])=>v&&v.n).sort((a,b)=>a[1].n.localeCompare(b[1].n))}
 function srcName(t){const c=t.acc&&conti()[t.acc];return c&&c.n?c.n:(t.s||"")}
 function flowOf(t){return Object.keys(FLOWS).find(k=>FLOWS[k]===t.s)||"cc"}
+// Beneficiario predefinito: l'intestatario per i conti personali, la famiglia per quelli cointestati
+function famName(){return members().includes("Famiglia")?"Famiglia":members()[0]}
+function defaultPerson(acc){const p=(conti()[acc]||{}).pb;return p&&members().includes(p)?p:famName()}
+// Movimenti già caricati con il beneficiario automatico diverso da quello predefinito (esclusi quelli decisi a mano o da una regola)
+function personFixList(){return S.all.filter(t=>t.acc&&conti()[t.acc]&&t.k==="spesa"&&t.cb!=="manuale"&&t.cb!=="regola"&&!t.fixed&&(t.p||famName())!==defaultPerson(t.acc))}
 function sources(){return [...new Set([...contoList().map(([,v])=>v.n),...S.all.map(srcName).filter(Boolean),CASH])]}
 function payers(){return S.settings.payers&&S.settings.payers.length?S.settings.payers:DEFAULTS.payers}
 // Conti cointestati: le spese restano a parte, senza dividerle tra le persone
@@ -735,7 +740,7 @@ async function handleFile(file){
     if(!payer&&saved&&saved.pb&&payerOpts().includes(saved.pb)){payer=saved.pb;payerBy="Come l’ultimo file con questo formato"}
     if(!payer) payer=devPayer();
     S.imp={fileName:file.name,grid,hdr:found.hdr,cols,sig,flow,acc:conto,holder,pre,payer,payerBy,toks,sort:"importo",map:saved?{d:saved.d,bal:saved.bal??found.map.bal??-1,x1:saved.x1,x2:saved.x2,x3:saved.x3??-1,a:saved.a,deb:saved.deb,cre:saved.cre}:found.map,
-      invert:saved?!!saved.inv:false,person:members()[0],edits:{},rows:[],ai:null,remembered:!!saved,showMap:!saved&&(found.map.d<0)};
+      invert:saved?!!saved.inv:false,person:defaultPerson(conto),edits:{},rows:[],ai:null,remembered:!!saved,showMap:!saved&&(found.map.d<0)};
     // un formato salvato senza descrizione (prima che riconoscessi queste colonne) prende quelle trovate ora
     if(S.imp.map.x1<0&&found.map.x1>=0){S.imp.map.x1=found.map.x1;S.imp.map.x2=found.map.x2;S.imp.map.x3=found.map.x3??-1}
     if(S.imp.map.x1<0) S.imp.showMap=true;
@@ -1415,6 +1420,9 @@ function openSettings(){
       ${S.confirmClear==="__all"?`<div class="banner" style="margin:0">Eliminare tutti i ${n} movimenti importati, di qualsiasi conto? ${c?(c===1?"La spesa in contanti resta. ":"Le "+c+" spese in contanti restano. "):""}Conti, regole e categorie restano.
         <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearall">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
       :`<button class="link" data-act="askclear" data-k="__all" style="color:var(--danger)">Elimina tutti i movimenti importati (${n})</button><p class="hint">Anche quelli che non risultano collegati a nessun conto. Le spese in contanti restano.</p>`}</div>`:""})()}
+    ${(()=>{const n=personFixList().length;return `<div class="field"><div class="lab">Beneficiario predefinito</div>
+      <p class="hint">Nei nuovi import le spese dei conti personali hanno come beneficiario l’intestatario, quelle dei conti cointestati la famiglia. Le regole per esercente e le vostre correzioni restano più forti.</p>
+      ${n?`<button class="btn ghost" data-act="applyperson" ${S.canWrite?"":"disabled"}>${n===1?"Applica al movimento già caricato":"Applica ai "+n+" movimenti già caricati"}</button><p class="hint">Solo quelli con il beneficiario messo in automatico: non tocca le scelte fatte da voi né quelle delle regole.</p>`:`<p class="hint">I movimenti già caricati sono a posto.</p>`}</div>`})()}
     <div class="field"><div class="lab">Correzioni salvate: <span id="fixn">…</span></div>
       <p class="hint">Tipo, categoria, persone, nomi, segno ed eliminazioni decisi da voi sui singoli movimenti, e le categorie trovate da Claude. Vengono riapplicati a ogni import, anche dopo aver svuotato e ricaricato.</p>
       ${S.confirmClear==="__fix"?`<div class="banner" style="margin:0">Azzerare tutte le correzioni salvate? I movimenti già caricati non cambiano, ma un nuovo caricamento non le riapplicherà più.
@@ -1610,6 +1618,10 @@ document.addEventListener("click",async e=>{
   }
   else if(act==="askclear"){S.confirmClear=el.dataset.k;openSettings()}
   else if(act==="noclear"){S.confirmClear=null;openSettings()}
+  else if(act==="applyperson"){
+    const list=personFixList().map(t=>({...t,p:defaultPerson(t.acc)}));el.disabled=true;
+    try{await putTx(list);toast(list.length===1?"Beneficiario aggiornato su 1 movimento":"Beneficiario aggiornato su "+list.length+" movimenti");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
+  }
   else if(act==="clearfix"){
     el.disabled=true;
     try{for(const id of S.fixIds||[]) await setDoc(doc(S.db,"fixes",id),{f:deleteField()},{merge:true});S.fixes={};S.confirmClear=null;toast("Correzioni azzerate");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
@@ -1730,7 +1742,7 @@ document.addEventListener("change",async e=>{
   if(id==="iacc0"){if(t.value==="__new"){S.impNew=true;S.impAcc=""}else{S.impAcc=t.value;S.impNew=false}t.blur();render();return}
   if(id==="cd"&&S.cash){const d=readDate("cd");if(d)S.cash.d=d;return}
   const I=S.imp;if(!I) return;
-  if(id==="iacc"){const c=conti()[t.value];if(!c)return;I.acc=t.value;S.impAcc=t.value;I.flow=c.t||"cc";I.sig=sigOf(I.cols,I.flow);if(c.pb&&payerOpts().includes(c.pb))I.payer=c.pb;I.payerBy="";I.edits={};buildRows();t.blur();render();return}
+  if(id==="iacc"){const c=conti()[t.value];if(!c)return;I.acc=t.value;S.impAcc=t.value;I.flow=c.t||"cc";I.sig=sigOf(I.cols,I.flow);if(c.pb&&payerOpts().includes(c.pb))I.payer=c.pb;I.person=defaultPerson(t.value);I.payerBy="";I.edits={};buildRows();t.blur();render();return}
   if(id==="ipb"){I.payer=t.value;I.payerBy="";buildRows();t.blur();render();return}
   if(t.dataset.pp){const r=I.rows.find(x=>x.id===t.dataset.pp);if(r){I.edits[r.rk]=Object.assign(I.edits[r.rk]||{},{p:t.value})}buildRows();t.blur();render();return}
   if(id==="iper"){const old=I.person;I.person=t.value;for(const e2 of Object.values(I.edits)) if(e2.p===old) delete e2.p;buildRows();t.blur();render();return}
