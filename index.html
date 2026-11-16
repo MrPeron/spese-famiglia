@@ -286,7 +286,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "23 · 16/11/2026";
+const APP_VERSION = "24 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -550,7 +550,7 @@ function rebuild(){
   S.ver=(S.ver||0)+1;
   S.all=out; S.byId=Object.fromEntries(out.map(t=>[t.id,t]));
 }
-function cleanTx(t){const o={};for(const k of ["d","a","m","x","c","p","pb","s","acc","k","n","by","t","cb","f","ty"]) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k];return o}
+function cleanTx(t){const o={};for(const k of ["d","a","m","x","c","p","pb","s","acc","k","n","by","t","cb","f","ty","rif","nr"]) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k];return o}
 
 async function putTx(list){
   const by={};
@@ -612,7 +612,7 @@ async function saveFixes(entries){
 }
 // Quello che si salva di un movimento corretto a mano: tipo, segno, categoria, persone, nome, nota
 function fixFields(t,cb){
-  const f={k:t.k,a:t.a,p:t.p,pb:t.pb,m:t.m,n:t.n,ty:t.ty,cb};
+  const f={k:t.k,a:t.a,p:t.p,pb:t.pb,m:t.m,n:t.n,ty:t.ty,rif:t.rif,nr:t.nr,cb};
   if(t.k==="spesa")f.c=t.c||"altro";
   if(cb==="Claude"){f.fc=t.f;delete f.k;delete f.a;delete f.p;delete f.pb}
   return f;
@@ -620,7 +620,7 @@ function fixFields(t,cb){
 function applyFix(tx,fx){
   if(fx.k){tx.k=fx.k;if(fx.k!=="spesa")tx.c=null;else if(!tx.c)tx.c="altro"}
   if(fx.c&&tx.k==="spesa")tx.c=fx.c;
-  for(const n of ["p","pb","m","n","ty"]) if(fx[n])tx[n]=fx[n];
+  for(const n of ["p","pb","m","n","ty","rif","nr"]) if(fx[n])tx[n]=fx[n];
   if(fx.a&&Math.abs(Math.abs(fx.a)-Math.abs(tx.a))<0.005)tx.a=fx.a;
   tx.cb=fx.cb||"manuale";tx.f=fx.fc??null;tx.gw=null;tx.fixed=true;
 }
@@ -981,6 +981,7 @@ function vHome(){
   </section>
   ${!filtered?vMonth(tx,nm,fam,J):""}
   ${J?vJoint(J):""}
+  ${!filtered?vRefunds(tx):""}
 
   ${vChart()}
   ${cats.length?`<section class="block"><div class="bh"><h2>Per categoria</h2><button class="link" data-act="budget">${hasB?"Piano mensile":"Imposta il piano"}</button></div>
@@ -1194,6 +1195,7 @@ function recurringSet(){
 // Tipo di una spesa: scelta sul movimento, poi tipo della categoria, domiciliazioni e ricorrenti fisse, importi grandi straordinari
 function spType(t){
   if(t.ty)return t.ty;
+  if(isRefund(t)){const e=refOf(t.rif[0]);if(e&&e!==t)return spType(e)}
   const ct=catType(t.c||"altro");if(ct)return ct;
   if(isSdd(t)||recurringSet().has(mkey(t.m)))return "fissa";
   if(-t.a>=straThr())return "straordinaria";
@@ -1203,7 +1205,7 @@ function spType(t){
 function vMonth(tx,nm,fam,J){
   const sp=spOf(tx),cur=sp.filter(t=>!paidByPatr(t)),patr=-sum(sp.filter(paidByPatr));
   const m={carta:0,banca:0,dom:0,contanti:0};
-  for(const t of cur) if(t.s!==CASH) m[mezzo(t)]-=t.a;
+  for(const t of cur) if(t.s!==CASH){const e=isRefund(t)&&refOf(t.rif[0]);m[mezzo(e||t)]-=t.a}
   const prel=-sum(tx.filter(t=>t.k==="prelievo"&&!isPatr(t))),cash=-sum(cur.filter(t=>t.s===CASH));
   m.contanti=Math.max(prel,cash);
   const ty={fissa:0,quotidiana:0,straordinaria:0};for(const t of cur) ty[spType(t)]-=t.a;ty.quotidiana+=Math.max(prel-cash,0);
@@ -1223,6 +1225,48 @@ function vMonth(tx,nm,fam,J){
     <div class="mz">${Object.keys(MEZZI).map(k=>tile(MEZZI[k],m[k],MEZZI_COL[k])).join("")}</div>
     <div class="mz three">${Object.keys(TIPI).map(k=>tile(TIPI[k],ty[k])).join("")}</div>
     ${m.contanti>cash+0.004?`<p class="hint" style="padding-bottom:6px">Contanti: ${eur(prel)} prelevati, ${eur(cash)} attribuiti a una categoria in Contanti.</p>`:`<div style="height:6px"></div>`}
+  </section>`;
+}
+// ---------- Rimborsi ----------
+// Un'entrata abbinata a una o più spese diventa un rimborso: spesa positiva nella stessa categoria, a costo resta il netto
+const RE_RIMB=/(blue assistance|assistenza sanitaria|unisalute|previmedical|caspie|\bfasi\b|rimborso|rimb\b|sinistro|reso\b|storno)/i;
+function refOf(k){return keyMap()[k]||S.byId[k]||null}
+function refundMap(){
+  if(refundMap.v===S.ver)return refundMap.m;
+  const m={};for(const t of S.all) if(t.rif&&t.rif.length) for(const k of t.rif)(m[k]=m[k]||[]).push(t);
+  refundMap.v=S.ver;refundMap.m=m;return m;
+}
+function isRefund(t){return !!(t.rif&&t.rif.length)}
+// Spese candidate per un rimborso: stesso importo in cima, poi le più vicine; per i rimborsi sanitari prima la Salute
+function refundCands(r,q){
+  const A=Math.abs(r.a),health=/(assistenza|sanitari|unisalute|previmedical|caspie|fasi|medic)/.test(norm((r.x||"")+" "+(r.m||""))),qq=norm(q||"");
+  return S.all.filter(e=>e.k==="spesa"&&e.a<0&&e.d<=r.d&&dayDiff(e.d,r.d)<=365&&(!qq||norm(e.m+" "+e.x).includes(qq)))
+    .map(e=>{const d=dayDiff(e.d,r.d);let sc=(365-d)/365*20;if(Math.abs(-e.a-A)<0.01)sc+=100;else if(-e.a>A&&health&&e.c==="salute")sc+=40;else if(health&&e.c==="salute")sc+=15;return {e,sc}})
+    .sort((x,y)=>y.sc-x.sc).slice(0,qq?40:15).map(x=>x.e);
+}
+function openRefund(id){
+  const r=S.byId[id];if(!r)return;S.sheet={type:"refund",id};
+  openSheet(`<h3>Rimborso di quale spesa?</h3><div class="sub">${h(r.m||"")} · +${eur(Math.abs(r.a))} il ${ddmm(r.d)}. Scegli una o più spese: il rimborso finisce nella loro categoria e a costo resta solo il netto.</div>
+    <div class="field"><input type="search" id="rq" placeholder="Cerca la spesa" aria-label="Cerca la spesa rimborsata"></div>
+    <div id="rlist">${refundList(r,"")}</div>
+    <div class="btns"><button class="btn" data-act="dorefund" style="flex:1" ${S.canWrite?"":"disabled"}>Abbina</button><button class="btn ghost" data-act="close">Annulla</button></div>`);
+}
+function refundList(r,q){
+  const list=refundCands(r,q);
+  if(!list.length) return `<p class="hint">Nessuna spesa trovata nell’anno prima del rimborso.</p>`;
+  return `<div class="rules">${list.map(e=>`<label class="check" style="margin:0;padding:8px 12px;border-top:1px solid var(--line)"><input type="checkbox" data-rc="${h(e.id)}"><span style="flex:1;min-width:0"><b>${h(e.m)}</b> · ${ddmm(e.d)} · ${eur(-e.a)}<br><span class="hint" style="margin:0">${catDot(e.c)} ${h((CAT[e.c]||CAT.altro).n)} · ${h(srcName(e))}${Math.abs(-e.a-Math.abs(r.a))<0.01?" · stesso importo":""}</span></span></label>`).join("")}</div>`;
+}
+// Entrate del periodo che sembrano rimborsi (da assicurazioni, fondi, resi, o con lo stesso importo di una spesa recente)
+function refundSugg(tx){
+  return tx.filter(t=>t.k==="entrata"&&!isPatr(t)&&!t.nr&&!isRefund(t)).filter(t=>{
+    if(RE_RIMB.test(norm((t.x||"")+" "+(t.m||""))))return true;
+    const A=Math.abs(t.a);return S.all.some(e=>e.k==="spesa"&&e.a<0&&Math.abs(-e.a-A)<0.01&&e.d<=t.d&&dayDiff(e.d,t.d)<=120);
+  }).slice(0,8);
+}
+function vRefunds(tx){
+  const l=refundSugg(tx);if(!l.length)return "";
+  return `<section class="block"><h2>Possibili rimborsi</h2><p class="hint">Entrate che sembrano il rimborso di una spesa. Abbinandole, a costo resta solo il netto e le entrate non sono gonfiate.</p>
+    ${l.map(t=>`<div class="rules" style="margin-bottom:8px"><div><span><b>${h(t.m)}</b> · ${ddmm(t.d)}<br><span class="hint" style="margin:0">${h(srcName(t))}</span></span><span class="num" style="white-space:nowrap">+${eur(t.a)}</span></div><div><button class="link" data-act="refund" data-id="${h(t.id)}">Abbina a una spesa</button><button class="link" data-act="notrefund" data-id="${h(t.id)}" style="color:var(--muted)">Non è un rimborso</button></div></div>`).join("")}
   </section>`;
 }
 function vSaldi(){
@@ -1300,7 +1344,7 @@ function txRow(t,showDate){
   return `<button class="tx" data-act="edit" data-id="${h(t.id)}">
     <span class="m">${h(t.m||t.x||"Movimento")}</span><span class="a num ${amtCls}">${sign}${eur(Math.abs(t.a))}</span>
     <span class="meta">${k==="spesa"?`<span class="tag">${catDot(t.c)}${h((CAT[t.c]||CAT.altro).n)}</span>`:`<span class="tag">${h(KINDS[k])}</span>`}
-      ${k==="spesa"&&t.p?`<span>per ${h(t.p)}</span>`:""}${t.pb&&(k==="spesa"||k==="prelievo")?`<span>${k==="prelievo"?"prelevati da":"pagata da"} ${h(t.pb)}</span>`:""}<span>${h(t.s===CASH?"contanti":srcName(t))}</span>${showDate?`<span class="num">${ddmm(t.d)}</span>`:""}${low?`<span class="flag">da verificare</span>`:""}${k==="spesa"&&spType(t)==="straordinaria"?`<span class="flag">straordinaria</span>`:""}</span>
+      ${k==="spesa"&&t.p?`<span>per ${h(t.p)}</span>`:""}${t.pb&&(k==="spesa"||k==="prelievo")?`<span>${k==="prelievo"?"prelevati da":"pagata da"} ${h(t.pb)}</span>`:""}<span>${h(t.s===CASH?"contanti":srcName(t))}</span>${showDate?`<span class="num">${ddmm(t.d)}</span>`:""}${low?`<span class="flag">da verificare</span>`:""}${k==="spesa"&&spType(t)==="straordinaria"&&t.a<0?`<span class="flag">straordinaria</span>`:""}${isRefund(t)?`<span class="tag">rimborso di ${h((refOf(t.rif[0])||{}).m||"una spesa")}${t.rif.length>1?" e altre":""}</span>`:""}${k==="spesa"&&t.a<0&&refundMap()[keyOf(t)||t.id]?`<span class="tag">rimborsata ${eur(refundMap()[keyOf(t)||t.id].reduce((x,r)=>x+r.a,0))}</span>`:""}</span>
   </button>`;
 }
 function vMovs(){
@@ -1485,6 +1529,7 @@ async function openEdit(id){
       <div class="field"><label for="epb">Sostenuta da</label><select id="epb">${[...new Set([...payerOpts(),t.pb].filter(Boolean))].map(m=>`<option ${t.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
     <div class="field"><label for="es">Mezzo</label><select id="es">${contoList().map(([id,v])=>`<option value="${id}" ${t.acc===id?"selected":""}>${h(v.n)}</option>`).join("")}${[...new Set([FLOWS.cc,FLOWS.carta,FLOWS.ris,CASH,t.s].filter(Boolean))].map(m=>`<option value="${h(m)}" ${!conti()[t.acc]&&t.s===m?"selected":""}>${h(m)}${contoList().length&&m!==CASH?" (senza conto)":""}</option>`).join("")}</select></div>
+    ${t.a>0&&(k==="entrata"||k==="spesa")&&t.acc!==undefined?(isRefund(t)?`<div class="banner" style="margin:4px 0 0">Rimborso di: ${t.rif.map(r=>{const e=refOf(r);return e?h(e.m)+" ("+ddmm(e.d)+", "+eur(-e.a)+")":"una spesa"}).join(", ")}. <button class="link" data-act="unrefund">Scollega</button></div>`:`<div class="btns" style="margin:4px 0 0"><button class="btn ghost" data-act="refund" data-id="${h(t.id)}">È il rimborso di una spesa…</button></div>`):""}
     <div class="field"><label for="en">Nota</label><input type="text" id="en" value="${h(t.n||"")}"></div>
     ${t.s!==CASH?`<label class="check"><input type="checkbox" id="erule" checked><span>Usa questa categoria e questo beneficiario per tutti i movimenti di “${h(t.m)}”, anche futuri</span></label>`:""}
     <div class="btns"><button class="btn" data-act="saveedit" style="flex:1" ${S.canWrite?"":"disabled"}>Salva modifiche</button><button class="btn danger" data-act="deltx" ${S.canWrite?"":"disabled"}>Elimina</button></div>`);
@@ -1749,6 +1794,25 @@ document.addEventListener("click",async e=>{
       patch[n]={d,v:Math.round(v*100)/100}}
     try{await saveSettings({quote:patch});const q={...quote()};for(const [n,v] of Object.entries(patch)){if(v)q[n]=v;else delete q[n]}S.settings.quote=q;toast("Quote salvate");openSettings()}catch(err){toast(errMsg(err))}
   }
+  else if(act==="refund"){openRefund(el.dataset.id)}
+  else if(act==="dorefund"){
+    const r=S.byId[S.sheet&&S.sheet.id];if(!r)return;
+    const ex=[...document.querySelectorAll("[data-rc]:checked")].map(i=>S.byId[i.dataset.rc]).filter(Boolean);
+    if(!ex.length){toast("Scegli almeno una spesa.");return}
+    const main=ex.slice().sort((a,b)=>a.a-b.a)[0],rif=ex.map(e=>keyOf(e)||e.id);
+    const nt={...r,k:"spesa",a:Math.abs(r.a),c:main.c||"altro",p:main.p||r.p,rif,ty:main.ty||null,cb:"manuale"};
+    el.disabled=true;
+    try{await putTx([nt]);if(r.acc)await saveFixes([[keyOf(r),{k:"spesa",c:nt.c,p:nt.p,rif,cb:"manuale"}]]);closeSheet();toast("Abbinato: a costo resta "+eur(-sum(ex)-nt.a))}
+    catch(err){toast(errMsg(err));el.disabled=false}
+  }
+  else if(act==="unrefund"){
+    const r=S.byId[S.sheet&&S.sheet.id];if(!r)return;
+    try{await putTx([{...r,k:"entrata",c:null,rif:[]}]);if(r.acc)await saveFixes([[keyOf(r),{k:"entrata",rif:[],cb:"manuale"}]]);closeSheet();toast("Scollegato: torna un’entrata")}catch(err){toast(errMsg(err))}
+  }
+  else if(act==="notrefund"){
+    const r=S.byId[el.dataset.id];if(!r)return;
+    try{await putTx([{...r,nr:1}]);if(r.acc)await saveFixes([[keyOf(r),{nr:1}]]);toast("Va bene, non lo propongo più")}catch(err){toast(errMsg(err))}
+  }
   else if(act==="clearfix"){
     el.disabled=true;
     try{for(const id of S.fixIds||[]) await setDoc(doc(S.db,"fixes",id),{f:deleteField()},{merge:true});S.fixes={};S.confirmClear=null;toast("Correzioni azzerate");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
@@ -1834,6 +1898,7 @@ document.addEventListener("click",async e=>{
   }
 });
 document.addEventListener("input",e=>{
+  if(e.target.id==="rq"){const r=S.byId[S.sheet&&S.sheet.id];const l=$("#rlist");if(r&&l)l.innerHTML=refundList(r,e.target.value);return}
   if(e.target.dataset&&(e.target.dataset.b!==undefined||e.target.id==="b_inc")){updatePlan();return}
   const id=e.target.id;
   if(id==="fq"){S.f.q=e.target.value;clearTimeout(S.qt);S.qt=setTimeout(()=>{const pos=e.target.selectionStart;e.target.blur();render();const n=$("#fq");if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}},350)}
