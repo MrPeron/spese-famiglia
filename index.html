@@ -299,7 +299,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "29 · 16/11/2026";
+const APP_VERSION = "30 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -992,19 +992,16 @@ function vHome(){
     ${!filtered?(()=>{const N=monthNums(tx),pN=monthNums(prevPer.filter(inPage)),sp2=N.out+addJ,[ni,nd]=eurSplit(Math.abs(N.net));
       // confronto solo se il periodo precedente ha movimenti in ogni mese
       const prevMs=new Set(prevPer.filter(inPage).map(t=>ymOf(t.d))),dd=prevMs.size>=nm&&pN.out>0?sp2-pN.out:null;
-      // dove è finito il netto: sui conti, nei risparmi, su altri conti vostri, carta ancora da addebitare
-      const B=bridge(tx,fam),jt=fam?B.joint:0,parts=[["sui conti",B.D],[fam?"nel patrimonio / risparmi":"nei risparmi",-B.patr],[fam?"su altri conti vostri":"su altri conti (Revolut, MBO, Fede…)",-B.others],["carta ancora da addebitare",-B.cardDiff],...(fam?[["ai conti comuni",-jt]]:[])].filter(([,v])=>Math.abs(v)>0.5);
-      const where=B.n&&parts.length>1?`<div class="delta" style="margin-top:4px">Dove è finito il netto: ${parts.map(([l,v])=>`<b>${v>=0?"+":"−"}${eur(Math.abs(v))}</b> ${h(l)}`).join(" · ")}</div>`:"";
-      return `<div class="lbl">${h(perIn()[0].toUpperCase()+perIn().slice(1))}${fam?"":" · "+h(S.page)}</div>
+      return `<div class="lbl">${fam?"Spese vive · ":""}${h(perIn()[0].toUpperCase()+perIn().slice(1))}${fam?"":" · "+h(S.page)}</div>
       <div class="hero3"><div><span>Entrate</span><b class="num">${eur(N.inc)}</b></div><div><span>Spese</span><b class="num">${eur(sp2)}</b></div></div>
       <div class="lbl" style="margin-top:6px">Netto</div>
       <div class="big num" style="color:${N.net>=0?"var(--ok)":"var(--danger)"}">${N.net>=0?"+":"−"}${h(ni)}<small>${h(nd)} €</small></div>
-      ${where}
       ${dd!=null?`<div class="delta">Spese <b>${eur(Math.abs(dd))}</b> ${dd>=0?"in più":"in meno"} rispetto ${h(prevName)}</div>`:""}`})():`<div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())} · con filtri</div>
     <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>${delta}`}${fromPatr>0.004?`<div class="delta">di cui <b>${eur(fromPatr)}</b> pagate dal patrimonio</div>`:""}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
   </section>
   ${!filtered?vMonthTable(fam):""}
+  ${fam&&!filtered?vPatr(tx):""}
   ${!filtered?vMonth(tx,nm,fam,J):""}
   ${!filtered?vBridge(tx,fam,S.lastInc||0,S.lastOut||0):""}
   ${J?vJoint(J):""}
@@ -1022,7 +1019,7 @@ function vHome(){
     ${pays.map(([p,v])=>`<button class="row" data-act="filterpb" data-p="${h(p)}"><i class="dot" style="background:var(--primary);opacity:.55"></i><span>${h(p)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/(tot||1)*100)}%</span></span></button>`).join("")}
   </section>`:""}
   ${vSaldi()}
-  ${fam?vPatr(tx):""}
+
   ${vCardCheck()}
   <section class="block"><h2>Contanti</h2>
     <div class="cashgrid">
@@ -1171,27 +1168,50 @@ function patrFlows(tx){
 }
 function quote(){return S.settings.quote||{}}
 function kids(){return members().filter(m=>m!==famName()&&!payers().includes(m)&&norm(m)!=="altri")}
+// Bonifico verso/da un conto vostro non importato (Revolut, eToro, conti a vostro nome): fa parte del risparmio
+function extOwn(t){return t.k==="giroconto"&&!isCardText(t)&&!counterpart(t)&&!!ownName(t.m||"")}
+// Riquadro Risparmio: dal saldo iniziale al saldo finale, con i soldi versati dai conti correnti e la differenza
+// (soldi ancora su conti non importati come Revolut, rendimenti o perdite) ricavata per differenza
 function vPatr(tx){
-  const P=periodEnd(),acc=contoList().filter(([k])=>ruolo(k)==="patrimonio"&&conti()[k].t!=="carta");
-  let tot=0;const rows=[];
-  for(const [k,v] of acc){const b=balAt(k,P),chk=bankCheck(k);if(b!=null)tot+=b;
-    rows.push(`<div class="recon num"><span>${h(v.n)}</span><span>${b==null?`<span class="ko">saldo da impostare</span>`:chk&&!chk.bad.length?`<span class="ok">torna con la banca al ${ddmm(chk.last.d)}</span>`:chk?`<span class="ko">non torna</span>`:""}</span><span>${b==null?"—":eur(b)}</span></div>`)}
-  for(const [k,v] of contoList()){if(ruolo(k)==="patrimonio")continue;const vi=vincAt(k,P);if(vi!=null){tot+=vi;rows.push(`<div class="recon num"><span>${h(v.n)} · vincolato</span><span></span><span>${eur(vi)}</span></div>`)}
-    if(v.lib&&v.lib.v){tot+=v.lib.v;rows.push(`<div class="recon num"><span>${h(v.n)} · linea libera</span><span class="hint" style="margin:0">inserita il ${ddmm(v.lib.d)}</span><span>${eur(v.lib.v)}</span></div>`)}}
-  if(!rows.length) return "";
-  const Q=quote(),qs=kids().map(n=>[n,Q[n]]).filter(([,q])=>q&&q.v);const sumQ=qs.reduce((x,[,q])=>x+q.v,0);
-  const F=patrFlows(tx),net=F.out-F.back;
-  return `<section class="block"><div class="bh"><h2>Patrimonio al ${ddmm(P)}</h2><button class="link" data-act="settings">Imposta</button></div>
-    ${rows.join("")}
-    <div class="recon num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Totale patrimonio</b></span><span></span><span><b>${eur(tot)}</b></span></div>
+  const open=shiftDay(S.per.from+"-01",-1),close=periodEnd();
+  const pAcc=contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta");
+  const vAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.vinc);
+  const lAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.lib&&v.lib.v);
+  if(!pAcc.length&&!vAcc.length&&!lAcc.length) return "";
+  let s0=0,s1=0;const miss=[],comp=[];
+  for(const [k,v] of pAcc){const a=balAt(k,open),b=balAt(k,close);if(a==null||b==null){miss.push(v.n);continue}s0+=a;s1+=b;comp.push([v.n,b])}
+  for(const [k,v] of vAcc){const a=vincAt(k,open),b=vincAt(k,close);s0+=a;s1+=b;comp.push([v.n+" · vincolato",b])}
+  for(const [,v] of lAcc){s0+=v.lib.v;s1+=v.lib.v;comp.push([v.n+" · linea libera (inserita il "+ddmm(v.lib.d)+")",v.lib.v])}
+  const pSet=new Set(pAcc.map(([k])=>k)),corr=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente").map(([k])=>k));
+  let vers=0,intr=0,spent=0;
+  for(const t of tx){
+    if(corr.has(t.acc)){
+      if(t.k!=="giroconto"||isCardText(t)) continue;
+      if(isVincolo(norm((t.x||"")+" "+(t.m||"")))){vers-=t.a;continue}
+      const c=counterpart(t);
+      if(c&&pSet.has(c.acc)){vers-=t.a;continue}
+      if(!c&&ownName(t.m||""))vers-=t.a;
+      continue;
+    }
+    if(pSet.has(t.acc)){if(t.k==="entrata"||isPatrCost(t))intr+=t.a;else if(t.k==="spesa")spent-=t.a}
+  }
+  const diff=s1-(s0+vers+intr-spent),sg=v=>(v>=0?"+":"−")+eur(Math.abs(v));
+  const r=(lab,v,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span></span><span class="${cls||""}">${b?"<b>"+v+"</b>":v}</span></div>`;
+  const Q=quote(),qs=kids().map(n=>[n,Q[n]]).filter(([,q])=>q&&q.v),sumQ=qs.reduce((x,[,q])=>x+q.v,0);
+  return `<section class="block"><div class="bh"><h2>Risparmio</h2><button class="link" data-act="settings">Imposta</button></div>
+    ${miss.length?`<p class="banner">Manca il saldo di ${h(miss.join(", "))}: impostalo in Impostazioni → Conti e carte.</p>`:`
+    ${r("Saldo al "+itDate(open),eur(s0),"",true)}
+    ${r(vers>=0?"Versato dai conti correnti":"Ripreso sui conti correnti",sg(vers),vers>=0?"ok":"ko")}
+    ${Math.abs(intr)>0.004?r("Interessi al netto di bolli e ritenute",sg(intr)):""}
+    ${spent>0.004?r("Spese pagate dal risparmio",sg(-spent)):""}
+    ${Math.abs(diff)>0.5?r("Differenza",sg(diff),diff>=0?"":"ko"):""}
+    ${r("Saldo al "+itDate(close),eur(s1),"",true)}
+    ${Math.abs(diff)>0.5?`<p class="hint">Differenza: soldi ancora su conti non importati (Revolut, eToro…) se negativa, o rientrati da lì se positiva; comprende rendimenti e perdite di quei conti e i movimenti della linea libera, che si aggiorna a mano.</p>`:""}`}
+    <div class="lab" style="font-weight:600;font-size:.9rem;margin:12px 0 4px">Composizione al ${ddmm(close)}</div>
+    ${comp.map(([n,v])=>r(h(n),eur(v))).join("")}
     ${qs.map(([n,q])=>`<div class="recon num"><span>di cui ${h(n)}</span><span class="hint" style="margin:0">al ${ddmm(q.d)}</span><span>${eur(q.v)}</span></div>`).join("")}
-    ${qs.length?`<div class="recon num"><span>di cui ${h(famName())}</span><span></span><span>${eur(tot-sumQ)}</span></div>`:`<p class="hint">Le quote di ${h(kids().join(" e ")||"figli")} si inseriscono in Impostazioni → Patrimonio; la famiglia è il resto.</p>`}
-    <div class="lab" style="font-weight:600;font-size:.9rem;margin:12px 0 4px">${h(perIn()[0].toUpperCase()+perIn().slice(1))}</div>
-    <div class="recon num"><span>${net>=0?"Messo da parte":"Preso dal patrimonio"}</span><span></span><span class="${net>=0?"ok":"ko"}">${net>=0?"+":"−"}${eur(Math.abs(net))}</span></div>
-    ${F.out&&F.back?`<p class="hint" style="margin:-2px 0 4px">${eur(F.out)} verso il patrimonio, ${eur(F.back)} tornati sui conti correnti</p>`:""}
-    ${F.rend?`<div class="recon num"><span>Interessi al netto di bolli e ritenute</span><span></span><span>${eur(F.rend)}</span></div>`:""}
-    ${F.spent?`<div class="recon num"><span>Spese pagate dal patrimonio</span><span></span><span>−${eur(F.spent)}</span></div>`:""}
-    <p class="hint" style="padding-bottom:10px">Il patrimonio non entra nel risultato del mese: interessi e bolli restano qui, e le spese pagate dal patrimonio compaiono tra le uscite ma a parte.</p>
+    ${qs.length?r("di cui "+h(famName()),eur(s1-sumQ)):`<p class="hint">Le quote di ${h(kids().join(" e ")||"figli")} si inseriscono in Impostazioni → Patrimonio.</p>`}
+    <div style="height:8px"></div>
   </section>`;
 }
 // ---------- Mezzi di pagamento e tipi di spesa ----------
@@ -1252,6 +1272,7 @@ function bridge(tx,fam){
     if(ca&&accs.has(c.acc))continue;
     if(ca&&ruolo(c.acc)==="patrimonio")patr+=t.a;
     else if(!fam&&ca&&ca.pb===JOINT)joint+=t.a;
+    else if(!c&&ownName(t.m||""))patr+=t.a;
     else others+=t.a;
   }
   const cardSpend=-sum(tx.filter(t=>t.s===FLOWS.carta&&(t.k==="spesa"||t.k==="prelievo")));
@@ -1267,8 +1288,8 @@ function vBridge(tx,fam,inc,out){
   const L=[];
   L.push(r("Entrate",sg(inc)),r(fam?"Uscite":"Uscite (compreso il versato ai conti comuni)",sg(-out)));
   if(fam&&Math.abs(B.joint)>0.004)L.push(r(B.joint<=0?"Versato ai conti comuni":"Ricevuto dai conti comuni",sg(B.joint)));
-  if(Math.abs(B.patr)>0.004)L.push(r(B.patr<=0?"Versato ai risparmi":"Preso dai risparmi",sg(B.patr)));
-  if(Math.abs(B.others)>0.004)L.push(r(fam?"Da/verso altri conti vostri":"Da/verso altri conti (Fede, conti non importati)",sg(B.others)));
+  if(Math.abs(B.patr)>0.004)L.push(r(B.patr<=0?"Versato ai risparmi (BBVA, vincoli, Revolut…)":"Ripreso dai risparmi",sg(B.patr)));
+  if(Math.abs(B.others)>0.004)L.push(r(fam?"Altri bonifici tra conti":"Da/verso Fede e altri conti",sg(B.others)));
   if(Math.abs(B.cardDiff)>0.004)L.push(r(B.cardDiff>=0?"Spese carta non ancora addebitate":"Addebiti carta di spese precedenti",sg(B.cardDiff)));
   if(B.cashAdj>0.004)L.push(r("Contanti spesi oltre i prelievi",sg(B.cashAdj)));
   if(Math.abs(resid)>1)L.push(r("Da verificare",sg(resid),"ko"));
