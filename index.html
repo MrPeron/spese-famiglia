@@ -278,7 +278,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "18 · 24/10/2026";
+const APP_VERSION = "19 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1277,7 +1277,7 @@ async function openEdit(id){
   openSheet(`<h3>${h(t.m||"Movimento")}</h3><div class="sub">${h(t.x||"")}</div><div class="sub" id="addedby"></div>
     <div class="field"><label for="em">Esercente</label><input type="text" id="em" value="${h(t.m||"")}"></div>
     <div class="two">
-      <div class="field"><label for="ea">Importo €</label><input type="text" inputmode="decimal" id="ea" value="${h(String(Math.abs(t.a)).replace(".",","))}"></div>
+      <div class="field"><label for="ea">Importo €</label><input type="text" inputmode="text" id="ea" value="${h((t.a>0?"+":"-")+String(Math.abs(t.a)).replace(".",","))}"><p class="hint" style="margin-bottom:0">− uscita · + entrata o rimborso</p></div>
       <div class="field"><label for="ed">Data</label>${dateInput("ed",t.d)}</div>
     </div>
     <div class="field"><label for="ek">Tipo</label><select id="ek">${Object.entries(KINDS).map(([kk,n])=>`<option value="${kk}" ${k===kk?"selected":""}>${h(n)}</option>`).join("")}</select></div>
@@ -1294,11 +1294,13 @@ async function openEdit(id){
 }
 async function saveEdit(){
   const t=S.byId[S.sheet.id];if(!t) return;
-  const a=num($("#ea").value);if(isNaN(a)||a===0){toast("Inserisci un importo valido.");return}
+  const raw=$("#ea").value.trim().replace(/^[−–]/,"-"),a=num(raw);if(isNaN(a)||a===0){toast("Inserisci un importo valido.");return}
+  const signed=/^[+-]/.test(raw);
   const k=$("#ek").value;
   const nd=readDate("ed");if($("#ed").value.trim()&&!nd){toast("Data non valida: scrivila come gg/mm/aaaa.");$("#ed").focus();return}
   const nt={...t,m:$("#em").value.trim()||t.m,d:nd||t.d,k,c:k==="spesa"?$("#ec").value:null,p:$("#ep").value,pb:$("#epb").value,...(conti()[$("#es").value]?{acc:$("#es").value,s:FLOWS[conti()[$("#es").value].t]||FLOWS.cc}:{acc:"",s:$("#es").value}),n:$("#en").value.trim(),cb:"manuale",f:null};
-  nt.a=(k==="entrata")?Math.abs(a):(t.a>0&&k==="spesa"?Math.abs(a):-Math.abs(a));
+  // il segno scritto vale (spesa negativa, rimborso positivo); entrate sempre positive, prelievi sempre negativi
+  nt.a=k==="entrata"?Math.abs(a):k==="prelievo"?-Math.abs(a):signed?(raw[0]==="+"?Math.abs(a):-Math.abs(a)):(t.a>0&&k==="spesa"?Math.abs(a):-Math.abs(a));
   try{
     if(ymOf(nt.d)!==ymOf(t.d)) await delTx(t);
     const changes=[nt];
