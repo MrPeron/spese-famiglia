@@ -278,7 +278,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "21 · 16/11/2026";
+const APP_VERSION = "22 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -416,7 +416,7 @@ function inPage(t){const A=pageAccs();if(!A) return true;return conti()[t.acc]?A
 function pageSeg(){return `<div class="seg pages" role="group" aria-label="Pagina">${pages().map(p=>`<button data-act="page" data-p="${h(p)}" aria-pressed="${(isFam()?"Famiglia":S.page)===p}">${h(p)}</button>`).join("")}</div>`}
 // Filtri del riepilogo: senza filtro "sostenuta da" vale per Alessandro + Federica insieme
 function hfOk(t){const f=S.hf;return (!f.p||(t.p||members()[0])===f.p)&&(!f.pb||!isFam()||t.pb===f.pb)&&(!f.c||(t.c||"altro")===f.c)}
-function spOf(list){return list.filter(t=>t.k==="spesa"&&inPage(t)&&hfOk(t))}
+function spOf(list){return list.filter(t=>t.k==="spesa"&&inPage(t)&&hfOk(t)&&!isPatrCost(t))}
 function budgets(){return S.settings.budgets||{}}
 function budgetOn(){return isFam()&&!S.hf.p&&!S.hf.pb}
 function monthBudget(){const B=budgets();return Object.entries(B).filter(([c,v])=>v>0&&(!S.hf.c||S.hf.c===c)).reduce((t,[,v])=>t+v,0)}
@@ -937,7 +937,8 @@ function vHome(){
   const pays=Object.entries(byPB).filter(([,v])=>Math.abs(v)>0.004).sort((a,b)=>b[1]-a[1]);
   const pbOk=t=>!f.pb||t.pb===f.pb;
   const prel=-sum(tx.filter(t=>t.k==="prelievo"&&pbOk(t))),cashSp=-sum(tx.filter(t=>t.k==="spesa"&&t.s===CASH&&pbOk(t))),untr=prel-cashSp;
-  const inc=sum(tx.filter(t=>t.k==="entrata"));
+  const inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t)));
+  const fromPatr=-sum(sp.filter(paidByPatr));
   const [ip,dp]=eurSplit(tot);
   const prevName=nm===1?"a "+monthName(shiftYM(S.per.from,-1)):"al periodo precedente";
   let delta="";
@@ -967,7 +968,7 @@ function vHome(){
   <section class="hero">
     <div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())}${filtered?" · con filtri":""}</div>
     <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>
-    ${delta}${budLine}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
+    ${delta}${budLine}${fromPatr>0.004?`<div class="delta">di cui <b>${eur(fromPatr)}</b> pagate dal patrimonio</div>`:""}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
   </section>
   ${J?vJoint(J):""}
@@ -984,6 +985,7 @@ function vHome(){
     ${pays.map(([p,v])=>`<button class="row" data-act="filterpb" data-p="${h(p)}"><i class="dot" style="background:var(--primary);opacity:.55"></i><span>${h(p)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/(tot||1)*100)}%</span></span></button>`).join("")}
   </section>`:""}
   ${vSaldi()}
+  ${fam?vPatr(tx):""}
   ${vCardCheck()}
   <section class="block"><h2>Contanti</h2>
     <div class="cashgrid">
@@ -1088,7 +1090,8 @@ function rollFrom(anchor,list,date,delta){
 }
 function accTx(id){return S.all.filter(t=>t.acc===id)}
 function balAt(id,date){const c=conti()[id];return c&&c.bal?rollFrom(c.bal,accTx(id),date,t=>t.a):null}
-function isVincMove(t){const x=norm((t.x||"")+" "+(t.m||""));return /(apertura|liquidazione) (linea )?vincolat|apertura vincolo|estinzione vincolo|svincolo/.test(x)&&!/interessi|bollo|imposta/.test(x)}
+// la riga del capitale riporta anche "Interessi Lordi": si esclude solo la riga degli interessi ("Liquidazione Interessi ...")
+function isVincMove(t){const x=norm((t.x||"")+" "+(t.m||""));return /(apertura|liquidazione) (linea )?vincolat|apertura vincolo|estinzione vincolo|svincolo/.test(x)&&!/liquidazione interessi|interessi a credito|bollo|imposta/.test(x)}
 function vincAt(id,date){const c=conti()[id];return c&&c.vinc?rollFrom(c.vinc,accTx(id),date,t=>isVincMove(t)?-t.a:0):null}
 // Carta: spese dopo l'ultimo estratto già addebitato
 function cardDebt(id,date){
@@ -1102,29 +1105,73 @@ function bankCheck(id){
   const bad=res.filter(r=>Math.abs(r.diff)>0.01);
   return {res,bad,last:res[res.length-1]};
 }
+// ---------- Patrimonio e corrente ----------
+// Ruolo del conto: "patrimonio" per i risparmi fermi (BBVA), "corrente" per i conti del mese
+function ruolo(acc){const c=conti()[acc];return c?(c.ruolo||(c.t==="ris"?"patrimonio":"corrente")):"corrente"}
+// Sui conti correnti (Widiba) linea libera, vincoli, loro interessi e bolli appartengono al patrimonio
+const RE_PATR=/(vincol|linea libera|interessi a credito|prod\.?\s?finanziari)/i;
+function isPatr(t){if(t.s===CASH)return false;if(conti()[t.acc]&&ruolo(t.acc)==="patrimonio")return true;return RE_PATR.test(norm((t.x||"")+" "+(t.m||"")))}
+// Costi del patrimonio (bolli, ritenute, commissioni): vanno nel rendimento netto, non tra le uscite del mese
+function isPatrCost(t){return t.k==="spesa"&&isPatr(t)&&/(bollo|imposta|ritenut|commission|spese tenuta|oneri)/.test(norm((t.x||"")+" "+(t.m||"")))}
+function paidByPatr(t){return t.k==="spesa"&&isPatr(t)&&!isPatrCost(t)}
+// Soldi passati tra corrente e patrimonio nel periodo: positivo = messo da parte
+function patrFlows(tx){
+  let out=0,back=0,rend=0,spent=0;
+  for(const t of tx){
+    const p=isPatr(t),corr=!p&&conti()[t.acc];
+    if(p){
+      if(t.k==="entrata")rend+=t.a;else if(isPatrCost(t))rend+=t.a;else if(t.k==="spesa")spent-=t.a;
+      // vincoli e linea libera visti dal conto corrente Widiba: sono passaggi corrente ↔ patrimonio
+      if(t.k==="giroconto"&&ruolo(t.acc)==="corrente"&&isVincolo(norm((t.x||"")+" "+(t.m||"")))){if(t.a<0)out-=t.a;else back+=t.a}
+      continue;
+    }
+    if(corr&&t.k==="giroconto"){const o=counterpart(t);if(o&&isPatr(o)&&ruolo(o.acc)==="patrimonio"){if(t.a<0)out-=t.a;else back+=t.a}}
+  }
+  return {out,back,rend,spent};
+}
+function quote(){return S.settings.quote||{}}
+function kids(){return members().filter(m=>m!==famName()&&!payers().includes(m)&&norm(m)!=="altri")}
+function vPatr(tx){
+  const P=periodEnd(),acc=contoList().filter(([k])=>ruolo(k)==="patrimonio"&&conti()[k].t!=="carta");
+  let tot=0;const rows=[];
+  for(const [k,v] of acc){const b=balAt(k,P),chk=bankCheck(k);if(b!=null)tot+=b;
+    rows.push(`<div class="recon num"><span>${h(v.n)}</span><span>${b==null?`<span class="ko">saldo da impostare</span>`:chk&&!chk.bad.length?`<span class="ok">torna con la banca al ${ddmm(chk.last.d)}</span>`:chk?`<span class="ko">non torna</span>`:""}</span><span>${b==null?"—":eur(b)}</span></div>`)}
+  for(const [k,v] of contoList()){if(ruolo(k)==="patrimonio")continue;const vi=vincAt(k,P);if(vi!=null){tot+=vi;rows.push(`<div class="recon num"><span>${h(v.n)} · vincolato</span><span></span><span>${eur(vi)}</span></div>`)}
+    if(v.lib&&v.lib.v){tot+=v.lib.v;rows.push(`<div class="recon num"><span>${h(v.n)} · linea libera</span><span class="hint" style="margin:0">inserita il ${ddmm(v.lib.d)}</span><span>${eur(v.lib.v)}</span></div>`)}}
+  if(!rows.length) return "";
+  const Q=quote(),qs=kids().map(n=>[n,Q[n]]).filter(([,q])=>q&&q.v);const sumQ=qs.reduce((x,[,q])=>x+q.v,0);
+  const F=patrFlows(tx),net=F.out-F.back;
+  return `<section class="block"><div class="bh"><h2>Patrimonio al ${ddmm(P)}</h2><button class="link" data-act="settings">Imposta</button></div>
+    ${rows.join("")}
+    <div class="recon num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Totale patrimonio</b></span><span></span><span><b>${eur(tot)}</b></span></div>
+    ${qs.map(([n,q])=>`<div class="recon num"><span>di cui ${h(n)}</span><span class="hint" style="margin:0">al ${ddmm(q.d)}</span><span>${eur(q.v)}</span></div>`).join("")}
+    ${qs.length?`<div class="recon num"><span>di cui ${h(famName())}</span><span></span><span>${eur(tot-sumQ)}</span></div>`:`<p class="hint">Le quote di ${h(kids().join(" e ")||"figli")} si inseriscono in Impostazioni → Patrimonio; la famiglia è il resto.</p>`}
+    <div class="lab" style="font-weight:600;font-size:.9rem;margin:12px 0 4px">${h(perIn()[0].toUpperCase()+perIn().slice(1))}</div>
+    <div class="recon num"><span>${net>=0?"Messo da parte":"Preso dal patrimonio"}</span><span></span><span class="${net>=0?"ok":"ko"}">${net>=0?"+":"−"}${eur(Math.abs(net))}</span></div>
+    ${F.out&&F.back?`<p class="hint" style="margin:-2px 0 4px">${eur(F.out)} verso il patrimonio, ${eur(F.back)} tornati sui conti correnti</p>`:""}
+    ${F.rend?`<div class="recon num"><span>Interessi al netto di bolli e ritenute</span><span></span><span>${eur(F.rend)}</span></div>`:""}
+    ${F.spent?`<div class="recon num"><span>Spese pagate dal patrimonio</span><span></span><span>−${eur(F.spent)}</span></div>`:""}
+    <p class="hint" style="padding-bottom:10px">Il patrimonio non entra nel risultato del mese: interessi e bolli restano qui, e le spese pagate dal patrimonio compaiono tra le uscite ma a parte.</p>
+  </section>`;
+}
 function vSaldi(){
-  const list=contoList().filter(([,v])=>isFam()||v.pb===S.page);if(!list.length) return "";
+  const list=contoList().filter(([k,v])=>(isFam()||v.pb===S.page)&&ruolo(k)!=="patrimonio");if(!list.length) return "";
   const P=periodEnd();let liq=0,vin=0,lib=0,debt=0,miss=0;
   const rows=list.map(([id,v])=>{
     if(v.t==="carta"){const dbt=cardDebt(id,P);debt+=dbt;return `<div class="recon num"><span>${h(v.n)}</span><span>da addebitare</span><span>−${eur(dbt)}</span></div>`}
-    const b=balAt(id,P),chk=bankCheck(id),vi=vincAt(id,P);
+    const b=balAt(id,P),chk=bankCheck(id),vi=null;
     if(b==null) miss++; else liq+=b;
-    if(vi!=null) vin+=vi;
-    if(v.lib&&v.lib.v) lib+=v.lib.v;
     const st=b==null?`<span class="ko">saldo da impostare</span>`:!chk?`<span class="hint" style="margin:0">nessun saldo della banca</span>`:chk.bad.length?`<span class="ko">non torna: ${chk.bad.map(r=>(r.diff>0?"+":"−")+eur(Math.abs(r.diff))+" al "+ddmm(r.d)).join(", ")}</span>`:`<span class="ok">torna con la banca al ${ddmm(chk.last.d)}</span>`;
     return `<div class="recon num"><span>${h(v.n)}</span><span>${st}</span><span>${b==null?"—":eur(b)}</span></div>
-      ${vi!=null?`<div class="recon num"><span class="hint" style="margin:0">${h(v.n)} · vincolato</span><span></span><span>${eur(vi)}</span></div>`:""}
-      ${v.lib&&v.lib.v?`<div class="recon num"><span class="hint" style="margin:0">${h(v.n)} · linea libera (inserita il ${ddmm(v.lib.d)})</span><span></span><span>${eur(v.lib.v)}</span></div>`:""}`;
+`;
   }).join("");
   const tot=liq+vin+lib;
-  return `<section class="block"><div class="bh"><h2>Conti e saldi al ${ddmm(P)}</h2><button class="link" data-act="settings">Imposta saldi</button></div>
+  return `<section class="block"><div class="bh"><h2>Conti correnti al ${ddmm(P)}</h2><button class="link" data-act="settings">Imposta saldi</button></div>
     <div class="recon num"><span class="h">Conto</span><span class="h">Verifica</span><span class="h">Saldo</span></div>
     ${rows}
-    <div class="recon num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Liquidità sui conti</b></span><span></span><span><b>${eur(liq)}</b></span></div>
-    ${vin?`<div class="recon num"><span>Vincolato</span><span></span><span>${eur(vin)}</span></div>`:""}
-    ${lib?`<div class="recon num"><span>Linea libera</span><span></span><span>${eur(lib)}</span></div>`:""}
+    <div class="recon num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Liquidità corrente</b></span><span></span><span><b>${eur(liq)}</b></span></div>
     ${debt?`<div class="recon num"><span>Carte ancora da addebitare</span><span></span><span>−${eur(debt)}</span></div>`:""}
-    <div class="recon num"><span><b>Totale netto</b></span><span></span><span><b>${eur(tot-debt)}</b></span></div>
+    <div class="recon num"><span><b>Corrente al netto delle carte</b></span><span></span><span><b>${eur(tot-debt)}</b></span></div>
     <p class="hint" style="padding-bottom:10px">${miss?`Per ${miss} ${miss===1?"conto manca":"conti mancano"} il saldo: si imposta da solo importando un estratto che lo riporta, oppure a mano nelle Impostazioni. `:""}“Torna” vuol dire che il saldo calcolato dai movimenti coincide con quello della banca: non manca niente.</p>
   </section>`;
 }
@@ -1406,6 +1453,7 @@ function openSettings(){
       ${contoList().length?`<div class="rules">${contoList().map(([k,v])=>{const n=S.all.filter(t=>t.acc===k).length;return `<div class="crow">
         <b>${h(v.n)}</b><span class="hint" style="margin:0">${n} ${n===1?"movimento":"movimenti"}</span>
         <div class="two" style="flex-basis:100%"><select data-ct="${h(k)}" aria-label="Tipo di ${h(v.n)}">${Object.entries(FLOWS).map(([f,fn])=>`<option value="${f}" ${v.t===f?"selected":""}>${h(fn)}</option>`).join("")}</select><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
+        ${v.t!=="carta"?`<div class="two" style="flex-basis:100%"><select data-cr="${h(k)}" aria-label="Ruolo di ${h(v.n)}"><option value="corrente" ${ruolo(k)==="corrente"?"selected":""}>Conto corrente del mese</option><option value="patrimonio" ${ruolo(k)==="patrimonio"?"selected":""}>Patrimonio (risparmi)</option></select><span></span></div>`:""}
         ${v.t!=="carta"?`<details class="bald" style="flex-basis:100%"><summary class="link">${v.bal?`Saldo ${eur(v.bal.v)} al ${ddmm(v.bal.d)} (${v.bal.src==="banca"?"dalla banca":"inserito a mano"})`:"Imposta il saldo"}</summary>
           <p class="hint">Un saldo a una data qualsiasi, anche di oggi: gli altri giorni li calcolo dai movimenti. Vincolato e linea libera servono solo per Widiba; lascia vuoto se non servono.</p>
           ${[["bal","Saldo del conto"],["vinc","Vincolato"],["lib","Linea libera (non calcolata, solo da mostrare)"]].map(([f,lab])=>`<div class="lab" style="font-size:.85rem;margin-top:8px">${lab}</div><div class="two">${dateInput(f+"_d_"+k,(v[f]&&v[f].d)||today(),lab+": data")}<input type="text" inputmode="decimal" id="${f}_v_${h(k)}" aria-label="${lab}: importo" placeholder="€" value="${v[f]?h(String(v[f].v).replace(".",",")):""}"></div>`).join("")}
@@ -1423,6 +1471,10 @@ function openSettings(){
     ${(()=>{const n=personFixList().length;return `<div class="field"><div class="lab">Beneficiario predefinito</div>
       <p class="hint">Nei nuovi import le spese dei conti personali hanno come beneficiario l’intestatario, quelle dei conti cointestati la famiglia. Le regole per esercente e le vostre correzioni restano più forti.</p>
       ${n?`<button class="btn ghost" data-act="applyperson" ${S.canWrite?"":"disabled"}>${n===1?"Applica al movimento già caricato":"Applica ai "+n+" movimenti già caricati"}</button><p class="hint">Solo quelli con il beneficiario messo in automatico: non tocca le scelte fatte da voi né quelle delle regole.</p>`:`<p class="hint">I movimenti già caricati sono a posto.</p>`}</div>`})()}
+    <div class="field"><div class="lab">Patrimonio: quote dei figli</div>
+      <p class="hint">Quanto del patrimonio è di ciascuno, a una data. La famiglia è il resto. Lascia vuoto chi non ha una quota.</p>
+      ${kids().map(n=>{const q=quote()[n]||{},id=hash(n);return `<div class="lab" style="font-size:.85rem;margin-top:8px">${h(n)}</div><div class="two">${dateInput("q_d_"+id,q.d||today(),n+": data")}<input type="text" inputmode="decimal" id="q_v_${id}" data-qn="${h(n)}" aria-label="${h(n)}: importo" placeholder="€" value="${q.v?h(String(q.v).replace(".",",")):""}"></div>`}).join("")}
+      <div class="btns" style="margin:10px 0 0"><button class="btn ghost" data-act="savequote" ${S.canWrite?"":"disabled"}>Salva quote</button></div></div>
     <div class="field"><div class="lab">Correzioni salvate: <span id="fixn">…</span></div>
       <p class="hint">Tipo, categoria, persone, nomi, segno ed eliminazioni decisi da voi sui singoli movimenti, e le categorie trovate da Claude. Vengono riapplicati a ogni import, anche dopo aver svuotato e ricaricato.</p>
       ${S.confirmClear==="__fix"?`<div class="banner" style="margin:0">Azzerare tutte le correzioni salvate? I movimenti già caricati non cambiano, ma un nuovo caricamento non le riapplicherà più.
@@ -1501,7 +1553,7 @@ function updatePlan(){
 function vPlanMonth(tx,tot,nm){
   const B=budgets(),out=Object.values(B).reduce((x,v)=>x+(v>0?v:0),0)*nm,inc=(S.settings.budInc||0)*nm;
   if(!out&&!inc) return "";
-  const realInc=sum(tx.filter(t=>t.k==="entrata")),row=(lab,p,r,good)=>{const d=r-p;return `<div class="recon num"><span>${lab}</span><span>${eur(p)}</span><span>${eur(r)} <span class="${(good?d>=0:d<=0)?"ok":"ko"}" style="font-size:.8rem">${d>=0?"+":"−"}${eur(Math.abs(d))}</span></span></div>`};
+  const realInc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t))),row=(lab,p,r,good)=>{const d=r-p;return `<div class="recon num"><span>${lab}</span><span>${eur(p)}</span><span>${eur(r)} <span class="${(good?d>=0:d<=0)?"ok":"ko"}" style="font-size:.8rem">${d>=0?"+":"−"}${eur(Math.abs(d))}</span></span></div>`};
   return `<section class="block"><div class="bh"><h2>Piano ${h(perIn())}</h2><button class="link" data-act="budget">Modifica</button></div>
     <div class="recon num"><span class="h"></span><span class="h">Previsto</span><span class="h">Reale</span></div>
     ${inc?row("Entrate",inc,realInc,true):""}${row("Uscite",out,tot,false)}${inc?row("Risparmio",inc-out,realInc-tot,true):""}
@@ -1622,6 +1674,14 @@ document.addEventListener("click",async e=>{
     const list=personFixList().map(t=>({...t,p:defaultPerson(t.acc)}));el.disabled=true;
     try{await putTx(list);toast(list.length===1?"Beneficiario aggiornato su 1 movimento":"Beneficiario aggiornato su "+list.length+" movimenti");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
   }
+  else if(act==="savequote"){
+    const patch={};
+    for(const i of document.querySelectorAll("[data-qn]")){const n=i.dataset.qn,v=num(i.value),d=readDate("q_d_"+hash(n));
+      if(i.value.trim()===""){patch[n]=null;continue}
+      if(isNaN(v)||!d){toast(n+": inserisci data (gg/mm/aaaa) e importo.");i.focus();return}
+      patch[n]={d,v:Math.round(v*100)/100}}
+    try{await saveSettings({quote:patch});const q={...quote()};for(const [n,v] of Object.entries(patch)){if(v)q[n]=v;else delete q[n]}S.settings.quote=q;toast("Quote salvate");openSettings()}catch(err){toast(errMsg(err))}
+  }
   else if(act==="clearfix"){
     el.disabled=true;
     try{for(const id of S.fixIds||[]) await setDoc(doc(S.db,"fixes",id),{f:deleteField()},{merge:true});S.fixes={};S.confirmClear=null;toast("Correzioni azzerate");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}
@@ -1718,6 +1778,11 @@ document.addEventListener("change",async e=>{
   if(id==="fs"){S.f.s=t.value;t.blur();render();return}
   if(id==="fpb"){S.f.pb=t.value;t.blur();render();return}
   if(id==="hfp"||id==="hfpb"||id==="hfc"){S.hf[id.slice(2)]=t.value;t.blur();render();return}
+  if(t.dataset.cr){
+    const id2=t.dataset.cr,c=conti()[id2];if(!c)return;const v={...c,ruolo:t.value};
+    try{await saveSettings({conti:{[id2]:v}});S.settings.conti={...conti(),[id2]:v};toast(t.value==="patrimonio"?"Ora è un conto del patrimonio":"Ora è un conto corrente")}catch(err){toast(errMsg(err))}
+    return;
+  }
   if(t.dataset.ct){
     const id2=t.dataset.ct,c=conti()[id2];if(!c)return;const v={...c,t:t.value};
     const upd=S.all.filter(x=>x.acc===id2&&x.s!==FLOWS[t.value]).map(x=>({...x,s:FLOWS[t.value]}));
