@@ -299,7 +299,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "28 · 16/11/2026";
+const APP_VERSION = "29 · 16/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -990,11 +990,16 @@ function vHome(){
   </div>
   <section class="hero">
     ${!filtered?(()=>{const N=monthNums(tx),pN=monthNums(prevPer.filter(inPage)),sp2=N.out+addJ,[ni,nd]=eurSplit(Math.abs(N.net));
-      const dd=prevName&&pN.out>0?sp2-pN.out:null;
+      // confronto solo se il periodo precedente ha movimenti in ogni mese
+      const prevMs=new Set(prevPer.filter(inPage).map(t=>ymOf(t.d))),dd=prevMs.size>=nm&&pN.out>0?sp2-pN.out:null;
+      // dove è finito il netto: sui conti, nei risparmi, su altri conti vostri, carta ancora da addebitare
+      const B=bridge(tx,fam),jt=fam?B.joint:0,parts=[["sui conti",B.D],[fam?"nel patrimonio / risparmi":"nei risparmi",-B.patr],[fam?"su altri conti vostri":"su altri conti (Revolut, MBO, Fede…)",-B.others],["carta ancora da addebitare",-B.cardDiff],...(fam?[["ai conti comuni",-jt]]:[])].filter(([,v])=>Math.abs(v)>0.5);
+      const where=B.n&&parts.length>1?`<div class="delta" style="margin-top:4px">Dove è finito il netto: ${parts.map(([l,v])=>`<b>${v>=0?"+":"−"}${eur(Math.abs(v))}</b> ${h(l)}`).join(" · ")}</div>`:"";
       return `<div class="lbl">${h(perIn()[0].toUpperCase()+perIn().slice(1))}${fam?"":" · "+h(S.page)}</div>
       <div class="hero3"><div><span>Entrate</span><b class="num">${eur(N.inc)}</b></div><div><span>Spese</span><b class="num">${eur(sp2)}</b></div></div>
       <div class="lbl" style="margin-top:6px">Netto</div>
       <div class="big num" style="color:${N.net>=0?"var(--ok)":"var(--danger)"}">${N.net>=0?"+":"−"}${h(ni)}<small>${h(nd)} €</small></div>
+      ${where}
       ${dd!=null?`<div class="delta">Spese <b>${eur(Math.abs(dd))}</b> ${dd>=0?"in più":"in meno"} rispetto ${h(prevName)}</div>`:""}`})():`<div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())} · con filtri</div>
     <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>${delta}`}${fromPatr>0.004?`<div class="delta">di cui <b>${eur(fromPatr)}</b> pagate dal patrimonio</div>`:""}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
     ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
