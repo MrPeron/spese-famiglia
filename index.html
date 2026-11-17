@@ -309,7 +309,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "33 · 17/11/2026";
+const APP_VERSION = "34 · 17/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -980,9 +980,10 @@ function vPersonal(){
     ${rest.length?`<button class="row" data-nav="movs"><i class="dot" style="background:var(--line)"></i><span>Altre ${rest.length} categorie</span><span class="amt num">${eur(restV)}</span></button>`:""}
   </section>`:""}
   ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
-    <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese e casa</span><span>Da parte</span></div>
-    ${rows.slice().reverse().map(r=>`<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese+r.casa)}</span><span class="num ${r.messo>0.5?"ok":r.messo<-0.5?"ko":""}">${fmtNum(r.messo)}</span></button>`).join("")}
-    <p class="hint" style="padding-bottom:10px">La quota casa conta nel mese che paga: un bonifico a Widiba negli ultimi giorni del mese vale per il mese dopo. "Da parte" in rosso: soldi ripresi dai risparmi.</p></section>`:""}
+    <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese e casa</span><span>Avanzato</span></div>
+    ${rows.slice().reverse().map(r=>{const av=r.messo+r.rim;return `<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese+r.casa+r.altri)}</span><span class="num ${av>=0?"ok":"ko"}">${av>=0?"+":"−"}${fmtNum(Math.abs(av))}</span></button>`}).join("")}
+    ${(()=>{const t=rows.reduce((x,r)=>({inc:x.inc+r.inc,out:x.out+r.spese+r.casa+r.altri,av:x.av+r.messo+r.rim}),{inc:0,out:0,av:0});return `<div class="mrow tot"><span><b>Totale</b></span><span class="num">${fmtNum(t.inc)}</span><span class="num">${fmtNum(t.out)}</span><span class="num ${t.av>=0?"ok":"ko"}">${t.av>=0?"+":"−"}${fmtNum(Math.abs(t.av))}</span></div>`})()}
+    <p class="hint" style="padding-bottom:10px">Avanzato = entrate meno spese, casa e soldi dati a Federica o altri: è quello che hai messo da parte più quello rimasto sul conto. La quota casa conta nel mese che paga (un bonifico a Widiba negli ultimi giorni del mese vale per il mese dopo).</p></section>`:""}
   <p class="hint" style="margin:14px 2px">Quadratura dei saldi, estratti carta, conti e grafici sono nella scheda <button class="link" data-nav="check">Verifiche</button>.</p>`;
 }
 // ---------- Verifiche: le informazioni tecniche, per la pagina scelta ----------
