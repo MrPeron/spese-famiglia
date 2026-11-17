@@ -309,7 +309,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "32 · 17/11/2026";
+const APP_VERSION = "33 · 17/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -947,13 +947,13 @@ async function saveImport(){
 
 // ---------- Viste ----------
 // ---------- Pagina personale: dove sono andati i soldi entrati ----------
-function allocation(tx){
-  const N=monthNums(tx),B=bridge(tx,false),casa=N.m.comuni,spese=N.out-casa,messo=-B.patr,altri=-B.others;
+function allocation(tx,from,to){
+  const N=monthNums(tx),B=bridge(tx,false),spese=N.out-N.m.comuni,casa=jointNetComp(from,to),messo=-B.patr,altri=-B.others;
   return {N,inc:N.inc,spese,casa,messo,altri,rim:N.inc-spese-casa-messo-altri};
 }
 function vPersonal(){
   S.hf={p:"",pb:"",c:""};
-  const tx=perTx().filter(inPage),A=allocation(tx);
+  const tx=perTx().filter(inPage),A=allocation(tx,S.per.from,S.per.to);
   const parts=[["Spese personali",A.spese,"#D85A30"],["Casa (versato a Widiba)",A.casa,"#D4537E"],["Messo da parte",A.messo,"#1D9E75"],["Dato a Federica e altri",A.altri,"#7F77DD"],["Rimasto sul conto",A.rim,"#9AA39E"]];
   const pos=parts.filter(([,v])=>v>0.5),neg=parts.filter(([,v])=>v<-0.5),tot=pos.reduce((x,[,v])=>x+v,0)||1;
   const negLab={"Messo da parte":"Ripreso dai risparmi","Dato a Federica e altri":"Ricevuto da Federica e altri","Rimasto sul conto":"Preso dai soldi già sul conto","Casa (versato a Widiba)":"Ricevuto da Widiba","Spese personali":"Rimborsi oltre le spese"};
@@ -965,7 +965,7 @@ function vPersonal(){
     :`<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span>${h((CAT[c]||CAT.altro).n)}</span><span class="amt num">${eur(v)}</span></button>`;
   // ultimi mesi
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
-  const rows=ms.map(ym=>({ym,...allocation(S.all.filter(t=>ymOf(t.d)===ym&&inPage(t)))})).filter(r=>r.inc||r.spese||r.casa);
+  const rows=ms.map(ym=>({ym,...allocation(S.all.filter(t=>ymOf(t.d)===ym&&inPage(t)),ym,ym)})).filter(r=>r.inc||r.spese||r.casa);
   const cap=s=>s[0].toUpperCase()+s.slice(1);
   return `${pageSeg()}
   <section class="hero">
@@ -981,8 +981,8 @@ function vPersonal(){
   </section>`:""}
   ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
     <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese e casa</span><span>Da parte</span></div>
-    ${rows.slice().reverse().map(r=>`<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese+r.casa)}</span><span class="num ${r.messo>0.5?"ok":""}">${fmtNum(r.messo)}</span></button>`).join("")}
-    <div style="height:8px"></div></section>`:""}
+    ${rows.slice().reverse().map(r=>`<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese+r.casa)}</span><span class="num ${r.messo>0.5?"ok":r.messo<-0.5?"ko":""}">${fmtNum(r.messo)}</span></button>`).join("")}
+    <p class="hint" style="padding-bottom:10px">La quota casa conta nel mese che paga: un bonifico a Widiba negli ultimi giorni del mese vale per il mese dopo. "Da parte" in rosso: soldi ripresi dai risparmi.</p></section>`:""}
   <p class="hint" style="margin:14px 2px">Quadratura dei saldi, estratti carta, conti e grafici sono nella scheda <button class="link" data-nav="check">Verifiche</button>.</p>`;
 }
 // ---------- Verifiche: le informazioni tecniche, per la pagina scelta ----------
@@ -1289,6 +1289,12 @@ function vPatr(tx){
 const MEZZI={carta:"Carta di credito",banca:"Banca",dom:"Domiciliazioni",contanti:"Contanti",comuni:"Conti comuni"};
 const MEZZI_COL={carta:"#6E5BB8",banca:"#3B7EA1",dom:"#B8730F",contanti:"#3E8E5A",comuni:"#C0504D"};
 // Pagina personale: il netto versato ai conti comuni correnti (Widiba) è una spesa di chi versa; verso BBVA sono risparmi
+// Mese di competenza della quota casa: un bonifico a Widiba negli ultimi 4 giorni del mese paga il mese dopo
+function casaYm(t){const ym=ymOf(t.d);return +t.d.slice(8,10)>lastDay(ym)-4?shiftYM(ym,1):ym}
+function isCasa(t,accs){if(!accs.has(t.acc)||t.k!=="giroconto"||isCardText(t)||isVincolo(norm((t.x||"")+" "+(t.m||""))))return false;const c=counterpart(t),ca=c&&conti()[c.acc];return !!(ca&&ca.pb===JOINT&&ruolo(c.acc)==="corrente")}
+function pageCorrAccs(){return new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente"&&inPage({acc:k})).map(([k])=>k))}
+// quota casa per competenza tra due mesi (estremi compresi)
+function jointNetComp(from,to){if(isFam())return 0;const accs=pageCorrAccs();let n=0;for(const t of S.all){if(!isCasa(t,accs))continue;const ym=casaYm(t);if(ym>=from&&ym<=to)n-=t.a}return n}
 function jointNet(tx){
   if(isFam())return 0;
   const accs=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente"&&inPage({acc:k})).map(([k])=>k));
