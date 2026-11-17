@@ -309,7 +309,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "34 · 17/11/2026";
+const APP_VERSION = "35 · 17/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -947,18 +947,21 @@ async function saveImport(){
 
 // ---------- Viste ----------
 // ---------- Pagina personale: dove sono andati i soldi entrati ----------
+// Rata del mutuo della casa: categoria "Mutuo e prestiti" con "mutuo" nella descrizione (non le altre rate, es. auto)
+function isMutuoCasa(t){return t.k==="spesa"&&(t.c||"")==="mutuo"&&/mutuo/.test(norm((t.x||"")+" "+(t.m||"")))}
 function allocation(tx,from,to){
-  const N=monthNums(tx),B=bridge(tx,false),spese=N.out-N.m.comuni,casa=jointNetComp(from,to),messo=-B.patr,altri=-B.others;
+  const N=monthNums(tx),B=bridge(tx,false),mutuo=-sum(spOf(tx).filter(t=>isMutuoCasa(t)&&!paidByPatr(t)));
+  const spese=N.out-N.m.comuni-mutuo,casa=jointNetComp(from,to)+mutuo,messo=-B.patr,altri=-B.others;
   return {N,inc:N.inc,spese,casa,messo,altri,rim:N.inc-spese-casa-messo-altri};
 }
 function vPersonal(){
   S.hf={p:"",pb:"",c:""};
   const tx=perTx().filter(inPage),A=allocation(tx,S.per.from,S.per.to);
-  const parts=[["Spese personali",A.spese,"#D85A30"],["Casa (versato a Widiba)",A.casa,"#D4537E"],["Messo da parte",A.messo,"#1D9E75"],["Dato a Federica e altri",A.altri,"#7F77DD"],["Rimasto sul conto",A.rim,"#9AA39E"]];
+  const parts=[["Spese personali",A.spese,"#D85A30"],["Casa (Widiba e mutuo)",A.casa,"#D4537E"],["Messo da parte",A.messo,"#1D9E75"],["Dato a Federica e altri",A.altri,"#7F77DD"],["Rimasto sul conto",A.rim,"#9AA39E"]];
   const pos=parts.filter(([,v])=>v>0.5),neg=parts.filter(([,v])=>v<-0.5),tot=pos.reduce((x,[,v])=>x+v,0)||1;
-  const negLab={"Messo da parte":"Ripreso dai risparmi","Dato a Federica e altri":"Ricevuto da Federica e altri","Rimasto sul conto":"Preso dai soldi già sul conto","Casa (versato a Widiba)":"Ricevuto da Widiba","Spese personali":"Rimborsi oltre le spese"};
+  const negLab={"Messo da parte":"Ripreso dai risparmi","Dato a Federica e altri":"Ricevuto da Federica e altri","Rimasto sul conto":"Preso dai soldi già sul conto","Casa (Widiba e mutuo)":"Ricevuto da Widiba","Spese personali":"Rimborsi oltre le spese"};
   // spese personali per categoria (escluse quelle pagate dal patrimonio), con i contanti non attribuiti
-  const sp=spOf(tx).filter(t=>!paidByPatr(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
+  const sp=spOf(tx).filter(t=>!paidByPatr(t)&&!isMutuoCasa(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
   const cats=Object.entries(byC).filter(([,v])=>v>0.004).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
   const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
