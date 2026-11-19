@@ -310,7 +310,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "38 · 19/11/2026";
+const APP_VERSION = "39 · 19/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1103,11 +1103,11 @@ function patrCalc(from,to){
   const open=shiftDay(from+"-01",-1),last=to+"-"+String(lastDay(to)).padStart(2,"0"),close=last<today()?last:today();
   const pAcc=contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta");
   const vAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.vinc);
-  const lAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.lib&&v.lib.v);
+  const lAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.lib);
   let s0=0,s1=0;const miss=[],comp=[];
   for(const [k,v] of pAcc){const a=balAt(k,open),b=balAt(k,close);if(a==null||b==null){miss.push(v.n);continue}s0+=a;s1+=b;comp.push([v.n,b])}
   for(const [k,v] of vAcc){const a=vincAt(k,open),b=vincAt(k,close);s0+=a;s1+=b;comp.push([v.n+" · vincolato",b])}
-  for(const [,v] of lAcc){s0+=v.lib.v;s1+=v.lib.v;comp.push([v.n+" · linea libera (inserita il "+ddmm(v.lib.d)+")",v.lib.v])}
+  for(const [k,v] of lAcc){const a=libAt(k,open),b=libAt(k,close);s0+=a;s1+=b;comp.push([v.n+" · linea libera",b])}
   const pSet=new Set(pAcc.map(([k])=>k)),corr=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente").map(([k])=>k));
   let vers=0,intr=0,spent=0;
   const inP=ym=>ym>=from&&ym<=to;
@@ -1153,7 +1153,7 @@ function vSavings(){
     ${P.spent>0.004?r("Spese pagate dai risparmi",sg(-P.spent)):""}
     ${Math.abs(P.diff)>0.5?r("Differenza",sg(P.diff),P.diff>=0?"":"ko"):""}
     ${r("Saldo al "+itDate(P.close),eur(P.s1),"",true)}
-    ${Math.abs(P.diff)>0.5?`<p class="hint">Differenza: soldi ancora su conti non importati (Revolut, eToro…) se negativa, o rientrati da lì se positiva; comprende rendimenti e perdite di quei conti e la linea libera, che si aggiorna a mano.</p>`:`<div style="height:8px"></div>`}
+    ${Math.abs(P.diff)>0.5?`<p class="hint">Differenza: soldi ancora su conti non importati (Revolut, eToro…) se negativa, o rientrati da lì se positiva; comprende rendimenti e perdite di quei conti.</p>`:`<div style="height:8px"></div>`}
   </section>
   <section class="block"><h2>Dove sono</h2>${P.comp.map(([n,v])=>r(h(n),eur(v))).join("")}<div style="height:8px"></div></section>
   ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
@@ -1275,7 +1275,10 @@ function rollFrom(anchor,list,date,delta){
 function accTx(id){return S.all.filter(t=>t.acc===id)}
 function balAt(id,date){const c=conti()[id];return c&&c.bal?rollFrom(c.bal,accTx(id),date,t=>t.a):null}
 // la riga del capitale riporta anche "Interessi Lordi": si esclude solo la riga degli interessi ("Liquidazione Interessi ...")
-function isVincMove(t){const x=norm((t.x||"")+" "+(t.m||""));return /(apertura|liquidazione) (linea )?vincolat|apertura vincolo|estinzione vincolo|svincolo/.test(x)&&!/liquidazione interessi|interessi a credito|bollo|imposta/.test(x)}
+function isVincMove(t){const x=norm((t.x||"")+" "+(t.m||""));return /(apertura|liquidazione) (linea )?vincolat|apertura vincolo|estinzione vincolo|svincolo/.test(x)&&!/libera/.test(x)&&!/liquidazione interessi|interessi a credito|bollo|imposta/.test(x)}
+// Linea libera: versamenti e svincoli che passano dal conto corrente Widiba
+function isLibMove(t){const x=norm((t.x||"")+" "+(t.m||""));return /libera/.test(x)&&!/interess|bollo|imposta|ritenut/.test(x)}
+function libAt(id,date){const c=conti()[id];return c&&c.lib?rollFrom(c.lib,accTx(id),date,t=>isLibMove(t)?-t.a:0):null}
 function vincAt(id,date){const c=conti()[id];return c&&c.vinc?rollFrom(c.vinc,accTx(id),date,t=>isVincMove(t)?-t.a:0):null}
 // Carta: spese dopo l'ultimo estratto già addebitato
 function cardDebt(id,date){
@@ -1830,8 +1833,8 @@ function openSettings(){
         <div class="two" style="flex-basis:100%"><select data-ct="${h(k)}" aria-label="Tipo di ${h(v.n)}">${Object.entries(FLOWS).map(([f,fn])=>`<option value="${f}" ${v.t===f?"selected":""}>${h(fn)}</option>`).join("")}</select><select data-cpb="${h(k)}" aria-label="Intestatario di ${h(v.n)}">${payerOpts().map(m=>`<option ${v.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
         ${v.t!=="carta"?`<div class="two" style="flex-basis:100%"><select data-cr="${h(k)}" aria-label="Ruolo di ${h(v.n)}"><option value="corrente" ${ruolo(k)==="corrente"?"selected":""}>Conto corrente del mese</option><option value="patrimonio" ${ruolo(k)==="patrimonio"?"selected":""}>Patrimonio (risparmi)</option></select><span></span></div>`:""}
         ${v.t!=="carta"?`<details class="bald" style="flex-basis:100%"><summary class="link">${v.bal?`Saldo ${eur(v.bal.v)} al ${ddmm(v.bal.d)} (${v.bal.src==="banca"?"dalla banca":"inserito a mano"})`:"Imposta il saldo"}</summary>
-          <p class="hint">Un saldo a una data qualsiasi, anche di oggi: gli altri giorni li calcolo dai movimenti. Vincolato e linea libera servono solo per Widiba; lascia vuoto se non servono.</p>
-          ${[["bal","Saldo del conto"],["vinc","Vincolato"],["lib","Linea libera (non calcolata, solo da mostrare)"]].map(([f,lab])=>`<div class="lab" style="font-size:.85rem;margin-top:8px">${lab}</div><div class="two">${dateInput(f+"_d_"+k,(v[f]&&v[f].d)||today(),lab+": data")}<input type="text" inputmode="decimal" id="${f}_v_${h(k)}" aria-label="${lab}: importo" placeholder="€" value="${v[f]?h(String(v[f].v).replace(".",",")):""}"></div>`).join("")}
+          <p class="hint">Un saldo a una data qualsiasi, anche di oggi: gli altri giorni li calcolo dai movimenti. Vincolato e linea libera servono solo per Widiba (anche questi li calcolo dai movimenti a partire dal valore inserito); lascia vuoto se non servono.</p>
+          ${[["bal","Saldo del conto"],["vinc","Vincolato"],["lib","Linea libera"]].map(([f,lab])=>`<div class="lab" style="font-size:.85rem;margin-top:8px">${lab}</div><div class="two">${dateInput(f+"_d_"+k,(v[f]&&v[f].d)||today(),lab+": data")}<input type="text" inputmode="decimal" id="${f}_v_${h(k)}" aria-label="${lab}: importo" placeholder="€" value="${v[f]?h(String(v[f].v).replace(".",",")):""}"></div>`).join("")}
           <div class="btns" style="margin:10px 0 0"><button class="btn ghost" data-act="savebal" data-k="${h(k)}" ${S.canWrite?"":"disabled"}>Salva saldi</button></div></details>`:""}
         ${S.confirmClear===k?`<div class="banner" style="flex-basis:100%;margin:0">Eliminare tutti i ${n} movimenti importati da ${h(v.n)}? Il conto resta: poi puoi reimportare gli estratti.
           <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="clearconto" data-k="${h(k)}">Elimina ${n} movimenti</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`
