@@ -309,7 +309,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "35 · 17/11/2026";
+const APP_VERSION = "36 · 19/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -980,7 +980,8 @@ function vPersonal(){
   </section>
   ${top.length?`<section class="block"><h2>Spese personali per categoria</h2>
     ${top.map(catRow).join("")}
-    ${rest.length?`<button class="row" data-nav="movs"><i class="dot" style="background:var(--line)"></i><span>Altre ${rest.length} categorie</span><span class="amt num">${eur(restV)}</span></button>`:""}
+    ${rest.length?(S.catOpen?rest.map(catRow).join("")+`<button class="row" data-act="catmore"><i class="dot" style="background:transparent"></i><span class="link">Mostra meno</span><span></span></button>`
+      :`<button class="row" data-act="catmore" aria-expanded="false"><i class="dot" style="background:var(--line)"></i><span>Altre ${rest.length} categorie</span><span class="amt num">${eur(restV)}</span></button>`):""}
   </section>`:""}
   ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
     <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese e casa</span><span>Avanzato</span></div>
@@ -1950,6 +1951,7 @@ document.addEventListener("click",async e=>{
   if(act==="prevm"){shiftPer(-1);render()}
   else if(act==="nextm"){shiftPer(1);render()}
   else if(act==="period") openPeriod();
+  else if(act==="catmore"){S.catOpen=!S.catOpen;render()}
   else if(act==="gomonth"){setMonth(el.dataset.ym);render();window.scrollTo(0,0)}
   else if(act==="cardmovs"){const c=conti()[el.dataset.acc];if(!c)return;S.per={from:el.dataset.e,to:el.dataset.e};S.f={q:"",c:"",p:"",s:c.n,pb:""};S.msort="importo";S.view="movs";render();window.scrollTo(0,0)}
   else if(act==="reload"){location.reload()}
