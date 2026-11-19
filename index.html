@@ -199,7 +199,8 @@ textarea{min-height:110px;resize:vertical}
 .grp .tx{border-color:var(--line);background:var(--bg)}
 .grp .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .grp select{min-width:0}
-.seg.pages{display:grid;grid-template-columns:repeat(3,1fr);width:100%;margin-top:6px}
+.seg.pages{display:grid;grid-template-columns:repeat(4,1fr);width:100%;margin-top:6px}
+.seg.pages button{padding:8px 4px;font-size:.88rem;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .filters.hf{grid-template-columns:1fr 1fr;margin-top:12px}
 .filters.hf.two2 select:last-child{grid-column:auto}
 .filters.hf select:last-child{grid-column:1/-1}
@@ -309,7 +310,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "36 · 19/11/2026";
+const APP_VERSION = "37 · 19/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -440,11 +441,17 @@ function perLabel(){
 function perIn(){return S.per.from===S.per.to?"a "+monthName(S.per.from):"in "+perLabel()}
 
 // Pagine: Famiglia = tutti i conti; Alessandro / Federica = i conti intestati a loro (e i contanti che hanno registrato)
-function pages(){return [...payers(),"Famiglia"]}
-function isFam(){return S.page==="Famiglia"||!payers().includes(S.page)}
-function pageAccs(){return isFam()?null:new Set(contoList().filter(([,v])=>v.pb===S.page).map(([k])=>k))}
+function pages(){return [...payers(),"Famiglia","Risparmi"]}
+function isRisp(){return S.page==="Risparmi"}
+function isFam(){return !payers().includes(S.page)}
+// Famiglia = conti cointestati correnti (Widiba); Risparmi = conti del patrimonio (BBVA); persone = conti intestati a loro
+function pageAccs(){
+  if(isRisp()) return new Set(contoList().filter(([k])=>ruolo(k)==="patrimonio").map(([k])=>k));
+  if(isFam()) return new Set(contoList().filter(([k,v])=>v.pb===JOINT&&ruolo(k)==="corrente").map(([k])=>k));
+  return new Set(contoList().filter(([,v])=>v.pb===S.page).map(([k])=>k));
+}
 function inPage(t){const A=pageAccs();if(!A) return true;return conti()[t.acc]?A.has(t.acc):t.pb===S.page}
-function pageSeg(){return `<div class="seg pages" role="group" aria-label="Pagina">${pages().map(p=>`<button data-act="page" data-p="${h(p)}" aria-pressed="${(isFam()?"Famiglia":S.page)===p}">${h(p)}</button>`).join("")}</div>`}
+function pageSeg(){return `<div class="seg pages" role="group" aria-label="Pagina">${pages().map(p=>`<button data-act="page" data-p="${h(p)}" aria-pressed="${(pages().includes(S.page)?S.page:"Famiglia")===p}">${h(p)}</button>`).join("")}</div>`}
 // Filtri del riepilogo: senza filtro "sostenuta da" vale per Alessandro + Federica insieme
 function hfOk(t){const f=S.hf;return (!f.p||(t.p||members()[0])===f.p)&&(!f.pb||!isFam()||t.pb===f.pb)&&(!f.c||(t.c||"altro")===f.c)}
 function spOf(list){return list.filter(t=>t.k==="spesa"&&inPage(t)&&hfOk(t)&&!isPatrCost(t))}
@@ -993,6 +1000,11 @@ function vPersonal(){
 // ---------- Verifiche: le informazioni tecniche, per la pagina scelta ----------
 function vCheck(){
   if(!S.all.length) return `<p class="hint" style="margin-top:20px">Importa un estratto per vedere le verifiche.</p>`;
+  if(isRisp()){
+    const rows=contoList().filter(([k])=>ruolo(k)==="patrimonio").map(([k,v])=>{const chk=bankCheck(k),b=balAt(k,periodEnd());
+      return `<div class="recon num"><span>${h(v.n)}</span><span>${b==null?`<span class="ko">saldo da impostare</span>`:!chk?`<span class="hint" style="margin:0">nessun saldo della banca</span>`:chk.bad.length?`<span class="ko">non torna: ${chk.bad.map(x=>(x.diff>0?"+":"−")+eur(Math.abs(x.diff))+" al "+ddmm(x.d)).join(", ")}</span>`:`<span class="ok">torna con la banca al ${ddmm(chk.last.d)}</span>`}</span><span>${b==null?"—":eur(b)}</span></div>`}).join("");
+    return `${pageSeg()}<section class="block"><h2>Saldi dei conti di risparmio</h2>${rows||`<p class="hint">Nessun conto con ruolo "Patrimonio".</p>`}<p class="hint" style="padding-bottom:10px">“Torna” vuol dire che il saldo calcolato dai movimenti coincide con quello della banca. Il vincolato Widiba si calcola dalle aperture e liquidazioni; la linea libera si aggiorna a mano.</p></section>`;
+  }
   const nm=perMonths().length,fam=isFam(),tx=perTx().filter(inPage),J=fam?null:jointFlows(tx);
   const prel=-sum(tx.filter(t=>t.k==="prelievo")),cashSp=-sum(tx.filter(t=>t.k==="spesa"&&t.s===CASH)),untr=prel-cashSp;
   return `${pageSeg()}
@@ -1018,96 +1030,130 @@ function vHome(){
       <p>Importa i movimenti del conto corrente o della carta di credito dall’home banking (Excel o CSV): gli esercenti vengono riconosciuti e messi in categoria. Le spese in contanti le registrate voi, al volo, dal telefono.</p>
       <div class="btns"><button class="btn" data-nav="imp">Importa un estratto</button><button class="btn ghost" data-nav="cash">Registra contanti</button></div>
     </section>`;
-  if(!isFam()) return vPersonal();
-  const nm=perMonths().length,f=S.hf,fam=isFam(),filtered=!!(f.p||(fam&&f.pb)||f.c);
-  const tx=perTx().filter(inPage),sp=spOf(tx);
-  const prevPer=S.all.filter(t=>{const ym=ymOf(t.d);return ym>=shiftYM(S.per.from,-nm)&&ym<=shiftYM(S.per.to,-nm)});
-  const J=fam?null:jointFlows(tx);
-  const addJ=0;
-  const noCashF=!f.c&&!f.p,unatt=noCashF?cashUnatt(tx):0;
-  const tot=-sum(sp)+unatt+addJ,prev=-sum(spOf(prevPer))+(noCashF?cashUnatt(prevPer.filter(inPage)):0);
-  const byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});if(unatt>0.004)byC._cash=unatt;
-  const B=budgetOn()?budgets():{};
-  const catIds=new Set(Object.entries(byC).filter(([,v])=>v>0.004).map(([c])=>c));
-  for(const [c,v] of Object.entries(B)) if(v>0&&(!f.c||f.c===c)) catIds.add(c);
-  const cats=[...catIds].map(c=>[c,byC[c]||0]).sort((a,b)=>b[1]-a[1]);
-  const byP={};sp.forEach(t=>{const p=t.p||members()[0];byP[p]=(byP[p]||0)-t.a});
-  const pers=Object.entries(byP).filter(([,v])=>Math.abs(v)>0.004).sort((a,b)=>b[1]-a[1]);
-  const byPB={};sp.forEach(t=>{const p=t.pb||"Non indicato";byPB[p]=(byPB[p]||0)-t.a});
-  const pays=Object.entries(byPB).filter(([,v])=>Math.abs(v)>0.004).sort((a,b)=>b[1]-a[1]);
-  const pbOk=t=>!f.pb||t.pb===f.pb;
-  const prel=-sum(tx.filter(t=>t.k==="prelievo"&&pbOk(t))),cashSp=-sum(tx.filter(t=>t.k==="spesa"&&t.s===CASH&&pbOk(t))),untr=prel-cashSp;
-  const inc=sum(tx.filter(t=>t.k==="entrata"&&!isPatr(t)));
-  const fromPatr=-sum(sp.filter(paidByPatr));
-  const [ip,dp]=eurSplit(tot);
-  const prevName=nm===1?"a "+monthName(shiftYM(S.per.from,-1)):"al periodo precedente";
-  let delta="";
-  if(prev>0){const d=tot-prev;delta=`<div class="delta">${d>=0?"<b>"+eur(d)+"</b> in più":"<b>"+eur(-d)+"</b> in meno"} rispetto ${h(prevName)}</div>`}
-  const pos=cats.reduce((t,[,v])=>t+Math.max(v,0),0)||1;
-  const maxV=Math.max(...cats.map(([,v])=>v),0.01);
-  const catRow=([c,v])=>{
-    if(c==="_cash") return `<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/pos*100)}%</span></span><span class="bst">Prelevati ma non registrati in Contanti con una categoria</span></button>`;
-    const b=(B[c]||0)*nm,col=(CAT[c]||CAT.altro).c;
-    let bar=`<span class="bar"><i style="width:${Math.max(v,0)/maxV*100}%;background:${col}"></i></span>`,st="";
-    if(b>0){
-      const r=v/b;
-      bar=`<span class="bar"><i style="width:${Math.min(Math.max(r,0),1)*100}%;background:${r>1?"var(--danger)":r>0.85?"var(--ochre)":col}"></i></span>`;
-      st=r>1?`<span class="bst over">Superato di ${eur(v-b)} su ${eur(b)}</span>`:r>0.85?`<span class="bst warn">Al ${Math.round(r*100)}% di ${eur(b)}: restano ${eur(b-v)}</span>`:`<span class="bst">Budget ${eur(b)}: restano ${eur(b-v)}</span>`;
-    }
-    return `<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span>${h((CAT[c]||CAT.altro).n)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(Math.max(v,0)/pos*100)}%</span></span>${bar}${st}</button>`;
-  };
-  const hasB=Object.values(budgets()).some(v=>v>0);
-  return `
-  ${pageSeg()}
-  <div class="filters hf ${fam?"":"two2"}">
-    <select id="hfp" aria-label="Beneficiario"><option value="">Tutti i beneficiari</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
-    <select id="hfc" aria-label="Categoria"><option value="">Tutte le categorie</option>${CATS.map(([id,n])=>`<option value="${id}" ${f.c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
-    ${fam?`<select id="hfpb" aria-label="Sostenute da"><option value="">Pagate da ${h(payers().join(" + "))}</option>${payerOpts().map(m=>`<option value="${h(m)}" ${f.pb===m?"selected":""}>${m===JOINT?"Pagate dai conti cointestati":"Pagate da "+h(m)}</option>`).join("")}</select>`:""}
-  </div>
-  <section class="hero">
-    ${!filtered?(()=>{const N=monthNums(tx),pN=monthNums(prevPer.filter(inPage)),sp2=N.out+addJ,[ni,nd]=eurSplit(Math.abs(N.net));
-      // confronto solo se il periodo precedente ha movimenti in ogni mese
-      const prevMs=new Set(prevPer.filter(inPage).map(t=>ymOf(t.d))),dd=prevMs.size>=nm&&pN.out>0?sp2-pN.out:null;
-      return `<div class="lbl">${fam?"Spese vive · ":""}${h(perIn()[0].toUpperCase()+perIn().slice(1))}${fam?"":" · "+h(S.page)}</div>
-      <div class="hero3"><div><span>Entrate</span><b class="num">${eur(N.inc)}</b></div><div><span>Spese</span><b class="num">${eur(sp2)}</b></div></div>
-      <div class="lbl" style="margin-top:6px">Netto</div>
-      <div class="big num" style="color:${N.net>=0?"var(--ok)":"var(--danger)"}">${N.net>=0?"+":"−"}${h(ni)}<small>${h(nd)} €</small></div>
-      ${dd!=null?`<div class="delta">Spese <b>${eur(Math.abs(dd))}</b> ${dd>=0?"in più":"in meno"} rispetto ${h(prevName)}</div>`:""}`})():`<div class="lbl">${fam?"Spese di famiglia":"Spese di "+h(S.page)} ${h(perIn())} · con filtri</div>
-    <div class="big num">${h(ip)}<small>${h(dp)} €</small></div>${delta}`}${fromPatr>0.004?`<div class="delta">di cui <b>${eur(fromPatr)}</b> pagate dal patrimonio</div>`:""}${addJ?`<div class="delta">di cui <b>${eur(addJ)}</b> versati ai conti comuni</div>`:""}
-    ${cats.length?`<div class="ribbon" aria-hidden="true">${cats.filter(([,v])=>v>0).map(([c,v])=>`<i style="flex:${v/pos};background:${(CAT[c]||CAT.altro).c}"></i>`).join("")}</div>`:""}
-  </section>
-  ${!filtered?vMonthTable(fam):""}
-  ${fam&&!filtered?vPatr(tx):""}
-  ${!filtered?vMonth(tx,nm,fam,J):""}
-  ${!filtered?vBridge(tx,fam,S.lastInc||0,S.lastOut||0):""}
-  ${J?vJoint(J):""}
-  ${!filtered?vRefunds(tx):""}
-
-  ${vChart()}
-  ${cats.length?`<section class="block"><div class="bh"><h2>Per categoria</h2><button class="link" data-act="budget">${hasB?"Piano mensile":"Imposta il piano"}</button></div>
-    ${!budgetOn()&&hasB?`<p class="hint">Il budget è per tutta la famiglia: con il filtro per persona non lo mostro.</p>`:""}
-    ${cats.map(catRow).join("")}
-  </section>`:`<section class="block"><h2>Nessuna spesa ${h(perIn())}</h2><p class="hint" style="padding-bottom:10px">Cambia periodo in alto${filtered?", togli qualche filtro":""} o importa un estratto.</p></section>`}
-  ${pers.length?`<section class="block"><h2>Per beneficiario</h2>
-    ${pers.map(([p,v])=>`<button class="row" data-act="filterp" data-p="${h(p)}"><i class="dot" style="background:var(--ink);opacity:.25"></i><span>${h(p)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/(tot||1)*100)}%</span></span></button>`).join("")}
-  </section>`:""}
-  ${fam&&pays.length?`<section class="block"><h2>Sostenute da</h2>
-    ${pays.map(([p,v])=>`<button class="row" data-act="filterpb" data-p="${h(p)}"><i class="dot" style="background:var(--primary);opacity:.55"></i><span>${h(p)}</span><span class="amt num">${eur(v)}<span class="pct">${Math.round(v/(tot||1)*100)}%</span></span></button>`).join("")}
-  </section>`:""}
-  ${vSaldi()}
-
-  ${vCardCheck()}
-  <section class="block"><h2>Contanti</h2>
-    <div class="cashgrid">
-      <div><span>Prelevati</span><b class="num">${eur(prel)}</b></div>
-      <div><span>Spese registrate</span><b class="num">${eur(cashSp)}</b></div>
-      <div class="${untr>0.5?"warn":""}"><span>Da giustificare</span><b class="num">${eur(Math.max(untr,0))}</b></div>
-    </div>
-    ${untr>0.5?`<p class="hint" style="margin-top:-6px;padding-bottom:12px">Mancano ${eur(untr)} di contanti senza una spesa associata. <button class="link" data-nav="cash">Registra ora</button></p>`:""}
-  </section>
-  ${inc>0&&!filtered?`<section class="block"><h2>Entrate ${h(perIn())}</h2><p class="num" style="font:700 1.3rem var(--display);margin:4px 0 12px">${eur(inc)}</p></section>`:""}`;
+  if(isRisp()) return vSavings();
+  if(isFam()) return vFamily();
+  return vPersonal();
 }
-
+// ---------- Famiglia: il conto di casa (Widiba) ----------
+// Entrate e uscite del conto di casa nel periodo; i versamenti di fine mese dai conti personali valgono per il mese dopo
+function famFlows(from,to){
+  const accs=pageCorrAccs(),F={vers:{},rest:{},altre:0,spese:0,messo:0,altri:0,list:[]};
+  for(const t of S.all){
+    if(!accs.has(t.acc)) continue;
+    const txt=norm((t.x||"")+" "+(t.m||""));
+    let ym=ymOf(t.d),c=null,ca=null;
+    if(t.k==="giroconto"){c=counterpart(t);ca=c&&conti()[c.acc];if(ca&&payers().includes(ca.pb)&&t.a>0)ym=casaYm(c)}
+    if(ym<from||ym>to) continue;
+    F.list.push(t);
+    if(t.k==="giroconto"){
+      if(isVincolo(txt)||(ca&&ruolo(c.acc)==="patrimonio")||(!c&&ownName(t.m||""))){F.messo-=t.a;continue}
+      if(ca&&payers().includes(ca.pb)){if(t.a>0)F.vers[ca.pb]=(F.vers[ca.pb]||0)+t.a;else F.rest[ca.pb]=(F.rest[ca.pb]||0)-t.a;continue}
+      F.altri-=t.a;continue;
+    }
+    if(isPatr(t)){F.messo-=t.a;continue}
+    if(t.k==="entrata"){F.altre+=t.a;continue}
+    if(t.k==="spesa"||t.k==="prelievo"){F.spese-=t.a;continue}
+  }
+  F.inc=Object.values(F.vers).reduce((x,v)=>x+v,0)+F.altre;
+  F.restT=Object.values(F.rest).reduce((x,v)=>x+v,0);
+  F.rim=F.inc-F.spese-F.messo-F.restT-F.altri;
+  return F;
+}
+function vFamily(){
+  S.hf={p:"",pb:"",c:""};
+  const F=famFlows(S.per.from,S.per.to),cap=s=>s[0].toUpperCase()+s.slice(1);
+  if(!pageCorrAccs().size) return `${pageSeg()}<p class="banner" style="margin-top:14px">Nessun conto cointestato corrente: in Impostazioni → Conti e carte imposta Widiba con intestatario Cointestato e ruolo Conto corrente.</p>`;
+  const src=[...payers().map(p=>["Versato da "+p,F.vers[p]||0]),["Altre entrate",F.altre]].filter(([,v])=>Math.abs(v)>0.5);
+  const parts=[["Spese di casa",F.spese,"#D85A30"],["Messo da parte",F.messo,"#1D9E75"],...payers().map(p=>["Restituito a "+p,F.rest[p]||0,"#7F77DD"]),["Altri bonifici",F.altri,"#B4B2A9"],["Rimasto sul conto",F.rim,"#9AA39E"]];
+  const pos=parts.filter(([,v])=>v>0.5),neg=parts.filter(([,v])=>v<-0.5),tot=pos.reduce((x,[,v])=>x+v,0)||1;
+  const negLab=l=>l==="Messo da parte"?"Ripreso dai risparmi":l==="Rimasto sul conto"?"Preso dai soldi già sul conto":l==="Altri bonifici"?"Altri bonifici ricevuti":l;
+  // spese di casa per categoria, con i contanti prelevati e non attribuiti
+  const tx=F.list,sp=spOf(tx).filter(t=>!paidByPatr(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
+  const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
+  const cats=Object.entries(byC).filter(([,v])=>v>0.004).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
+  const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
+    :`<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span>${h((CAT[c]||CAT.altro).n)}</span><span class="amt num">${eur(v)}</span></button>`;
+  const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
+  const rows=ms.map(ym=>({ym,...famFlows(ym,ym)})).filter(r=>r.inc||r.spese);
+  return `${pageSeg()}
+  <section class="hero">
+    <div class="lbl">Entrati sul conto di casa ${h(perIn())}</div>
+    <div class="big num">${h(eurSplit(F.inc)[0])}<small>${h(eurSplit(F.inc)[1])} €</small></div>
+    <div class="alloc" style="margin-top:4px">${src.map(([l,v])=>`<i></i><span class="hint" style="margin:0">${h(l)}</span><b class="num" style="font-weight:500">${eur(v)}</b><small></small>`).join("")}</div>
+    <div class="lbl" style="margin-top:14px">Dove sono andati</div>
+    <div class="ribbon" aria-hidden="true">${pos.map(([,v,c])=>`<i style="flex:${v/tot};background:${c}"></i>`).join("")}</div>
+    <div class="alloc">${pos.map(([l,v,c])=>`<i class="dot" style="background:${c}"></i><span>${h(l)}</span><b class="num">${eur(v)}</b><small class="num">${Math.round(v/tot*100)}%</small>`).join("")}
+      ${neg.map(([l,v])=>`<i></i><span class="hint" style="margin:0">${h(negLab(l))}</span><b class="num">+${eur(-v)}</b><small></small>`).join("")}</div>
+  </section>
+  ${top.length?`<section class="block"><h2>Spese di casa per categoria</h2>
+    ${top.map(catRow).join("")}
+    ${rest.length?(S.catOpen?rest.map(catRow).join("")+`<button class="row" data-act="catmore"><i class="dot" style="background:transparent"></i><span class="link">Mostra meno</span><span></span></button>`
+      :`<button class="row" data-act="catmore"><i class="dot" style="background:var(--line)"></i><span>Altre ${rest.length} categorie</span><span class="amt num">${eur(restV)}</span></button>`):""}
+  </section>`:""}
+  ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
+    <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese di casa</span><span>Avanzato</span></div>
+    ${rows.slice().reverse().map(r=>{const av=r.inc-r.spese-r.restT-r.altri;return `<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese)}</span><span class="num ${av>=0?"ok":"ko"}">${av>=0?"+":"−"}${fmtNum(Math.abs(av))}</span></button>`}).join("")}
+    <p class="hint" style="padding-bottom:10px">Entrate = versamenti di Alessandro e Federica (quelli di fine mese valgono per il mese dopo) più le altre entrate del conto. Avanzato = entrate meno spese e soldi restituiti: è quello messo da parte più quello rimasto sul conto.</p></section>`:""}
+  <p class="hint" style="margin:14px 2px">Risparmi (BBVA e vincoli) nella pagina <button class="link" data-act="page" data-p="Risparmi">Risparmi</button>; quadratura e controlli nella scheda <button class="link" data-nav="check">Verifiche</button>.</p>`;
+}
+// ---------- Risparmi: BBVA, vincoli e linea libera, divisi tra figli e famiglia ----------
+function patrCalc(from,to){
+  const open=shiftDay(from+"-01",-1),last=to+"-"+String(lastDay(to)).padStart(2,"0"),close=last<today()?last:today();
+  const pAcc=contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta");
+  const vAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.vinc);
+  const lAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.lib&&v.lib.v);
+  let s0=0,s1=0;const miss=[],comp=[];
+  for(const [k,v] of pAcc){const a=balAt(k,open),b=balAt(k,close);if(a==null||b==null){miss.push(v.n);continue}s0+=a;s1+=b;comp.push([v.n,b])}
+  for(const [k,v] of vAcc){const a=vincAt(k,open),b=vincAt(k,close);s0+=a;s1+=b;comp.push([v.n+" · vincolato",b])}
+  for(const [,v] of lAcc){s0+=v.lib.v;s1+=v.lib.v;comp.push([v.n+" · linea libera (inserita il "+ddmm(v.lib.d)+")",v.lib.v])}
+  const pSet=new Set(pAcc.map(([k])=>k)),corr=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente").map(([k])=>k));
+  let vers=0,intr=0,spent=0;
+  for(const t of S.all){
+    const ym=ymOf(t.d);if(ym<from||ym>to) continue;
+    if(corr.has(t.acc)){
+      if(t.k!=="giroconto"||isCardText(t)) continue;
+      if(isVincolo(norm((t.x||"")+" "+(t.m||"")))){vers-=t.a;continue}
+      const c=counterpart(t);
+      if(c&&pSet.has(c.acc)){vers-=t.a;continue}
+      if(!c&&ownName(t.m||""))vers-=t.a;
+      continue;
+    }
+    if(pSet.has(t.acc)){if(t.k==="entrata"||isPatrCost(t))intr+=t.a;else if(t.k==="spesa")spent-=t.a}
+  }
+  return {open,close,s0,s1,vers,intr,spent,diff:s1-(s0+vers+intr-spent),comp,miss,any:pAcc.length+vAcc.length+lAcc.length};
+}
+function vSavings(){
+  const P=patrCalc(S.per.from,S.per.to),cap=s=>s[0].toUpperCase()+s.slice(1),sg=v=>(v>=0?"+":"−")+eur(Math.abs(v));
+  if(!P.any) return `${pageSeg()}<p class="banner" style="margin-top:14px">Nessun conto di risparmio: in Impostazioni → Conti e carte imposta BBVA con ruolo "Patrimonio (risparmi)".</p>`;
+  if(P.miss.length) return `${pageSeg()}<p class="banner" style="margin-top:14px">Manca il saldo di ${h(P.miss.join(", "))}: si imposta da solo importando un estratto che lo riporta, oppure in Impostazioni → Conti e carte.</p>`;
+  const Q=quote(),qs=kids().map(n=>[n,Q[n]]).filter(([,q])=>q&&q.v),fam=P.s1-qs.reduce((x,[,q])=>x+q.v,0);
+  const share=[...qs.map(([n,q],i)=>[n,q.v,["#378ADD","#D4537E"][i%2],"al "+ddmm(q.d)]),[famName(),fam,"#1D9E75",""]],tot=share.reduce((x,[,v])=>x+Math.max(v,0),0)||1;
+  const r=(lab,v,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span></span><span class="${cls||""}">${b?"<b>"+v+"</b>":v}</span></div>`;
+  const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
+  const rows=ms.map(ym=>({ym,...patrCalc(ym,ym)})).filter(x=>x.vers||x.intr||x.spent);
+  return `${pageSeg()}
+  <section class="hero">
+    <div class="lbl">Risparmi al ${itDate(P.close)}</div>
+    <div class="big num">${h(eurSplit(P.s1)[0])}<small>${h(eurSplit(P.s1)[1])} €</small></div>
+    <div class="ribbon" aria-hidden="true">${share.filter(([,v])=>v>0).map(([,v,c])=>`<i style="flex:${v/tot};background:${c}"></i>`).join("")}</div>
+    <div class="alloc">${share.map(([n,v,c,d])=>`<i class="dot" style="background:${c}"></i><span>${h(n)}${d?` <span class="hint" style="margin:0">${d}</span>`:""}</span><b class="num">${eur(v)}</b><small class="num">${Math.round(Math.max(v,0)/tot*100)}%</small>`).join("")}</div>
+    ${qs.length?"":`<p class="hint">Le quote di ${h(kids().join(" e ")||"figli")} si inseriscono in Impostazioni → Patrimonio: quote dei figli.</p>`}
+  </section>
+  <section class="block"><h2>Movimenti ${h(perIn())}</h2>
+    ${r("Saldo al "+itDate(P.open),eur(P.s0),"",true)}
+    ${r(P.vers>=0?"Versato dai conti correnti":"Ripreso sui conti correnti",sg(P.vers),P.vers>=0?"ok":"ko")}
+    ${Math.abs(P.intr)>0.004?r("Interessi al netto di bolli e ritenute",sg(P.intr)):""}
+    ${P.spent>0.004?r("Spese pagate dai risparmi",sg(-P.spent)):""}
+    ${Math.abs(P.diff)>0.5?r("Differenza",sg(P.diff),P.diff>=0?"":"ko"):""}
+    ${r("Saldo al "+itDate(P.close),eur(P.s1),"",true)}
+    ${Math.abs(P.diff)>0.5?`<p class="hint">Differenza: soldi ancora su conti non importati (Revolut, eToro…) se negativa, o rientrati da lì se positiva; comprende rendimenti e perdite di quei conti e la linea libera, che si aggiorna a mano.</p>`:`<div style="height:8px"></div>`}
+  </section>
+  <section class="block"><h2>Dove sono</h2>${P.comp.map(([n,v])=>r(h(n),eur(v))).join("")}<div style="height:8px"></div></section>
+  ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
+    <div class="mrow h"><span>in €</span><span>Versato</span><span>Interessi</span><span>Spese</span></div>
+    ${rows.slice().reverse().map(x=>`<button class="mrow" data-act="gomonth" data-ym="${x.ym}"><span>${h(cap(monShort(x.ym)))} ${x.ym.slice(2,4)}</span><span class="num ${x.vers>=0?"ok":"ko"}">${x.vers>=0?"+":"−"}${fmtNum(Math.abs(x.vers))}</span><span class="num">${fmtNum(x.intr)}</span><span class="num">${fmtNum(x.spent)}</span></button>`).join("")}
+    <div style="height:8px"></div></section>`:""}`;
+}
 // Colonne impilate per mese: le 6 categorie principali, il resto in "Altre categorie"
 function niceStep(x){const p=Math.pow(10,Math.floor(Math.log10(x||1)));const m=x/p;return (m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10)*p}
 function eurShort(n){return n>=1000?(n/1000).toLocaleString("it-IT",{maximumFractionDigits:1})+"k":String(Math.round(n))}
@@ -1246,50 +1292,6 @@ function quote(){return S.settings.quote||{}}
 function kids(){return members().filter(m=>m!==famName()&&!payers().includes(m)&&norm(m)!=="altri")}
 // Bonifico verso/da un conto vostro non importato (Revolut, eToro, conti a vostro nome): fa parte del risparmio
 function extOwn(t){return t.k==="giroconto"&&!isCardText(t)&&!counterpart(t)&&!!ownName(t.m||"")}
-// Riquadro Risparmio: dal saldo iniziale al saldo finale, con i soldi versati dai conti correnti e la differenza
-// (soldi ancora su conti non importati come Revolut, rendimenti o perdite) ricavata per differenza
-function vPatr(tx){
-  const open=shiftDay(S.per.from+"-01",-1),close=periodEnd();
-  const pAcc=contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta");
-  const vAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.vinc);
-  const lAcc=contoList().filter(([k,v])=>ruolo(k)!=="patrimonio"&&v.lib&&v.lib.v);
-  if(!pAcc.length&&!vAcc.length&&!lAcc.length) return "";
-  let s0=0,s1=0;const miss=[],comp=[];
-  for(const [k,v] of pAcc){const a=balAt(k,open),b=balAt(k,close);if(a==null||b==null){miss.push(v.n);continue}s0+=a;s1+=b;comp.push([v.n,b])}
-  for(const [k,v] of vAcc){const a=vincAt(k,open),b=vincAt(k,close);s0+=a;s1+=b;comp.push([v.n+" · vincolato",b])}
-  for(const [,v] of lAcc){s0+=v.lib.v;s1+=v.lib.v;comp.push([v.n+" · linea libera (inserita il "+ddmm(v.lib.d)+")",v.lib.v])}
-  const pSet=new Set(pAcc.map(([k])=>k)),corr=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente").map(([k])=>k));
-  let vers=0,intr=0,spent=0;
-  for(const t of tx){
-    if(corr.has(t.acc)){
-      if(t.k!=="giroconto"||isCardText(t)) continue;
-      if(isVincolo(norm((t.x||"")+" "+(t.m||"")))){vers-=t.a;continue}
-      const c=counterpart(t);
-      if(c&&pSet.has(c.acc)){vers-=t.a;continue}
-      if(!c&&ownName(t.m||""))vers-=t.a;
-      continue;
-    }
-    if(pSet.has(t.acc)){if(t.k==="entrata"||isPatrCost(t))intr+=t.a;else if(t.k==="spesa")spent-=t.a}
-  }
-  const diff=s1-(s0+vers+intr-spent),sg=v=>(v>=0?"+":"−")+eur(Math.abs(v));
-  const r=(lab,v,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span></span><span class="${cls||""}">${b?"<b>"+v+"</b>":v}</span></div>`;
-  const Q=quote(),qs=kids().map(n=>[n,Q[n]]).filter(([,q])=>q&&q.v),sumQ=qs.reduce((x,[,q])=>x+q.v,0);
-  return `<section class="block"><div class="bh"><h2>Risparmio</h2><button class="link" data-act="settings">Imposta</button></div>
-    ${miss.length?`<p class="banner">Manca il saldo di ${h(miss.join(", "))}: impostalo in Impostazioni → Conti e carte.</p>`:`
-    ${r("Saldo al "+itDate(open),eur(s0),"",true)}
-    ${r(vers>=0?"Versato dai conti correnti":"Ripreso sui conti correnti",sg(vers),vers>=0?"ok":"ko")}
-    ${Math.abs(intr)>0.004?r("Interessi al netto di bolli e ritenute",sg(intr)):""}
-    ${spent>0.004?r("Spese pagate dal risparmio",sg(-spent)):""}
-    ${Math.abs(diff)>0.5?r("Differenza",sg(diff),diff>=0?"":"ko"):""}
-    ${r("Saldo al "+itDate(close),eur(s1),"",true)}
-    ${Math.abs(diff)>0.5?`<p class="hint">Differenza: soldi ancora su conti non importati (Revolut, eToro…) se negativa, o rientrati da lì se positiva; comprende rendimenti e perdite di quei conti e i movimenti della linea libera, che si aggiorna a mano.</p>`:""}`}
-    <div class="lab" style="font-weight:600;font-size:.9rem;margin:12px 0 4px">Composizione al ${ddmm(close)}</div>
-    ${comp.map(([n,v])=>r(h(n),eur(v))).join("")}
-    ${qs.map(([n,q])=>`<div class="recon num"><span>di cui ${h(n)}</span><span class="hint" style="margin:0">al ${ddmm(q.d)}</span><span>${eur(q.v)}</span></div>`).join("")}
-    ${qs.length?r("di cui "+h(famName()),eur(s1-sumQ)):`<p class="hint">Le quote di ${h(kids().join(" e ")||"figli")} si inseriscono in Impostazioni → Patrimonio.</p>`}
-    <div style="height:8px"></div>
-  </section>`;
-}
 // ---------- Mezzi di pagamento e tipi di spesa ----------
 const MEZZI={carta:"Carta di credito",banca:"Banca",dom:"Domiciliazioni",contanti:"Contanti",comuni:"Conti comuni"};
 const MEZZI_COL={carta:"#6E5BB8",banca:"#3B7EA1",dom:"#B8730F",contanti:"#3E8E5A",comuni:"#C0504D"};
@@ -1371,7 +1373,7 @@ function vBridge(tx,fam,inc,out){
   L.push(r("Entrate",sg(inc)),r(fam?"Uscite":"Uscite (compreso il versato ai conti comuni)",sg(-out)));
   if(fam&&Math.abs(B.joint)>0.004)L.push(r(B.joint<=0?"Versato ai conti comuni":"Ricevuto dai conti comuni",sg(B.joint)));
   if(Math.abs(B.patr)>0.004)L.push(r(B.patr<=0?"Versato ai risparmi (BBVA, vincoli, Revolut…)":"Ripreso dai risparmi",sg(B.patr)));
-  if(Math.abs(B.others)>0.004)L.push(r(fam?"Altri bonifici tra conti":"Da/verso Fede e altri conti",sg(B.others)));
+  if(Math.abs(B.others)>0.004)L.push(r(fam?"Da/verso i conti personali e altri":"Da/verso Fede e altri conti",sg(B.others)));
   if(Math.abs(B.cardDiff)>0.004)L.push(r(B.cardDiff>=0?"Spese carta non ancora addebitate":"Addebiti carta di spese precedenti",sg(B.cardDiff)));
   if(B.cashAdj>0.004)L.push(r("Contanti spesi oltre i prelievi",sg(B.cashAdj)));
   if(Math.abs(resid)>1)L.push(r("Da verificare",sg(resid),"ko"));
