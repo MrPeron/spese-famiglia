@@ -310,7 +310,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "37 · 19/11/2026";
+const APP_VERSION = "38 · 19/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1037,7 +1037,8 @@ function vHome(){
 // ---------- Famiglia: il conto di casa (Widiba) ----------
 // Entrate e uscite del conto di casa nel periodo; i versamenti di fine mese dai conti personali valgono per il mese dopo
 function famFlows(from,to){
-  const accs=pageCorrAccs(),F={vers:{},rest:{},altre:0,spese:0,messo:0,altri:0,list:[]};
+  const pSet=new Set(contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta").map(([k])=>k));
+  const accs=pageCorrAccs(),F={vers:{},rest:{},altre:0,spese:0,messo:0,altri:0,list:[],toSav:new Set()};
   for(const t of S.all){
     if(!accs.has(t.acc)) continue;
     const txt=norm((t.x||"")+" "+(t.m||""));
@@ -1051,6 +1052,7 @@ function famFlows(from,to){
       F.altri-=t.a;continue;
     }
     if(isPatr(t)){F.messo-=t.a;continue}
+    if(pCounter(t,pSet)){F.messo-=t.a;F.toSav.add(t);continue}
     if(t.k==="entrata"){F.altre+=t.a;continue}
     if(t.k==="spesa"||t.k==="prelievo"){F.spese-=t.a;continue}
   }
@@ -1068,7 +1070,7 @@ function vFamily(){
   const pos=parts.filter(([,v])=>v>0.5),neg=parts.filter(([,v])=>v<-0.5),tot=pos.reduce((x,[,v])=>x+v,0)||1;
   const negLab=l=>l==="Messo da parte"?"Ripreso dai risparmi":l==="Rimasto sul conto"?"Preso dai soldi già sul conto":l==="Altri bonifici"?"Altri bonifici ricevuti":l;
   // spese di casa per categoria, con i contanti prelevati e non attribuiti
-  const tx=F.list,sp=spOf(tx).filter(t=>!paidByPatr(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
+  const tx=F.list,sp=spOf(tx).filter(t=>!paidByPatr(t)&&!F.toSav.has(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
   const cats=Object.entries(byC).filter(([,v])=>v>0.004).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
   const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
@@ -1108,17 +1110,22 @@ function patrCalc(from,to){
   for(const [,v] of lAcc){s0+=v.lib.v;s1+=v.lib.v;comp.push([v.n+" · linea libera (inserita il "+ddmm(v.lib.d)+")",v.lib.v])}
   const pSet=new Set(pAcc.map(([k])=>k)),corr=new Set(contoList().filter(([k,v])=>v.t!=="carta"&&ruolo(k)==="corrente").map(([k])=>k));
   let vers=0,intr=0,spent=0;
+  const inP=ym=>ym>=from&&ym<=to;
   for(const t of S.all){
-    const ym=ymOf(t.d);if(ym<from||ym>to) continue;
+    const ym=ymOf(t.d);
     if(corr.has(t.acc)){
-      if(t.k!=="giroconto"||isCardText(t)) continue;
-      if(isVincolo(norm((t.x||"")+" "+(t.m||"")))){vers-=t.a;continue}
-      const c=counterpart(t);
-      if(c&&pSet.has(c.acc)){vers-=t.a;continue}
-      if(!c&&ownName(t.m||""))vers-=t.a;
+      // vincoli e bonifici verso i risparmi contano qualunque tipo abbia la riga (spesa, entrata o giroconto)
+      if(isCardText(t)||t.s===CASH||t.k==="prelievo") continue;
+      if(isVincolo(norm((t.x||"")+" "+(t.m||"")))){if(inP(ym))vers-=t.a;continue}
+      const c=pCounter(t,pSet);
+      if(c){if(inP(ymOf(c.d)))vers-=t.a;continue}
+      if(t.k==="giroconto"&&inP(ym)&&!counterpart(t)&&ownName(t.m||""))vers-=t.a;
       continue;
     }
-    if(pSet.has(t.acc)){if(t.k==="entrata"||isPatrCost(t))intr+=t.a;else if(t.k==="spesa")spent-=t.a}
+    if(!inP(ym)) continue;
+    if(pSet.has(t.acc)){
+      if(pCounter(t,corr)) continue;
+      if(t.k==="entrata"||isPatrCost(t))intr+=t.a;else if(t.k==="spesa")spent-=t.a}
   }
   return {open,close,s0,s1,vers,intr,spent,diff:s1-(s0+vers+intr-spent),comp,miss,any:pAcc.length+vAcc.length+lAcc.length};
 }
@@ -1212,6 +1219,24 @@ function counterpart(t){
     if(o.s===FLOWS.carta||o.s===CASH||o.k==="prelievo") continue;
     if(isVincolo(norm((o.x||"")+" "+(o.m||"")))) continue;
     if(Math.abs(o.a+t.a)<0.01&&dayDiff(o.d,t.d)<=6) return o;
+  }
+  return null;
+}
+// Controparte cercata solo tra certi conti (es. i risparmi): vale anche se la riga non è stata letta come giroconto
+const RE_NOTX=/(interess|bollo|imposta|ritenut|commission|canone|competenze)/;
+function pCounter(t,set){
+  if(isCardText(t)||t.s===CASH||t.k==="prelievo"||RE_NOTX.test(norm((t.x||"")+" "+(t.m||"")))) return null;
+  const key=[...set].sort().join("|");
+  if(pCounter.all!==S.all){pCounter.all=S.all;pCounter.m={}}
+  const list=pCounter.m[key]=pCounter.m[key]||S.all.filter(o=>set.has(o.acc));
+  for(const o of list){
+    if(o===t||o.acc===t.acc) continue;
+    if(o.s===FLOWS.carta||o.s===CASH||o.k==="prelievo") continue;
+    if(Math.abs(o.a+t.a)>=0.01||dayDiff(o.d,t.d)>6) continue;
+    if(RE_NOTX.test(norm((o.x||"")+" "+(o.m||"")))) continue;
+    // se nessuna delle due righe è un giroconto, solo importi da almeno 100 €
+    if(t.k!=="giroconto"&&o.k!=="giroconto"&&(Math.abs(t.a)<100)) continue;
+    return o;
   }
   return null;
 }
