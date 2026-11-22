@@ -498,7 +498,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "54 · 22/11/2026";
+const APP_VERSION = "55 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1274,7 +1274,7 @@ function vCasa(){
     ${tile("liste",svg('<path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/>'),"var(--primary)",h(L.n),todo?todo+" da prendere":"Niente da prendere",li.length?`<span class="mini"><i style="width:${Math.round(done/li.length*100)}%"></i></span>`:"")}
   </div>
   <section class="block">
-    <h2 style="display:flex;justify-content:space-between;align-items:center">Prossimi impegni<button class="link" data-nav="scad" style="font-size:.9rem">Calendario ›</button></h2>${casaAgenda()}<div style="height:6px"></div>
+    <h2 style="display:flex;justify-content:space-between;align-items:center">Prossimi 30 giorni<button class="link" data-nav="scad" style="font-size:.9rem">Calendario ›</button></h2>${casaAgenda()}<div style="height:6px"></div>
   </section>`;
 }
 // ---------- Tessere fedeltà: codice a barre o QR, logo dal sito del negozio o foto della tessera ----------
@@ -1832,14 +1832,15 @@ function evGcal(){
 }
 // Casa: prossimi impegni (eventi in evidenza dei prossimi 90 giorni, poi tutto il resto in ordine di data)
 function casaAgenda(){
-  const t=today(),to=shiftDay(t,90),its=[];
+  // solo il prossimo mese (30 giorni); le scadenze già passate e non pagate restano in cima
+  const t=today(),to=shiftDay(t,30),its=[];
   for(const e of evs())for(const s of evOcc(e,t,to))its.push({k:"ev",x:e,s});
-  for(const x of dls())if(!x.done)its.push({k:"dl",x,s:x.d});
-  const l=its.sort((a,b)=>(b.k==="ev"&&b.x.hi&&daysTo(b.s)<=30?1:0)-(a.k==="ev"&&a.x.hi&&daysTo(a.s)<=30?1:0)||a.s.localeCompare(b.s)).slice(0,5);
-  if(!l.length) return `<p class="hint" style="padding-bottom:4px">Eventi di famiglia e scadenze: aggiungili dal Calendario.</p>`;
+  for(const x of dls())if(!x.done)for(const s of occurrences(x,to))if(s===x.d||s>=t)its.push({k:"dl",x,s});
+  const all=its.sort((a,b)=>a.s.localeCompare(b.s)||(b.x.hi?1:0)-(a.x.hi?1:0)),l=all.slice(0,12),more=all.length-l.length;
+  if(!l.length) return `<p class="hint" style="padding-bottom:4px">Niente nei prossimi 30 giorni.</p>`;
   return l.map(it=>{const x=it.x,n=daysTo(it.s);
     if(it.k==="dl"){const cls=n<0?"late":n<=(x.pre??7)?"soon":"";return `<button class="kv kvb" data-act="dl-open" data-id="${h(x.id)}"><span>${h(x.t)}</span><b class="num dlk ${cls}">${ddmm(it.s)}${x.a?" · "+eur(x.a):""}</b></button>`}
-    return `<button class="kv kvb" data-act="ev-open" data-id="${h(x.id)}" data-s="${h(it.s)}"><span>${x.hi?`<i class="dot" style="background:${EV_HI};margin-right:6px"></i>`:""}${h(x.t)}</span><b class="num"${x.hi?` style="color:${EV_HI}"`:""}>${n===0?"oggi":n===1?"domani":ddmm(it.s)}${x.time?" · "+h(x.time):""}</b></button>`}).join("");
+    return `<button class="kv kvb" data-act="ev-open" data-id="${h(x.id)}" data-s="${h(it.s)}"><span>${x.hi?`<i class="dot" style="background:${EV_HI};margin-right:6px"></i>`:""}${h(x.t)}</span><b class="num"${x.hi?` style="color:${EV_HI}"`:""}>${n===0?"oggi":n===1?"domani":ddmm(it.s)}${x.time?" · "+h(x.time):""}</b></button>`}).join("")+(more>0?`<button class="kv kvb" data-nav="scad"><span class="hint" style="margin:0">e altri ${more} ${more===1?"impegno":"impegni"}</span><b class="link">Calendario ›</b></button>`:"");
 }
 // ---------- Budget annuale mensilizzato (es. 2027): voci × 12 mesi, proposta dai dati reali, confronto con il consuntivo ----------
 const MESI=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
