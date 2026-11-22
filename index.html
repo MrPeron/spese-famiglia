@@ -117,6 +117,18 @@ h2+.kvb{border-top:0}
 .lirow.done .lbox{background:var(--primary);border-color:var(--primary)}
 .lirow.done .lbox::after{content:"";width:6px;height:11px;border:solid var(--on-primary);border-width:0 2.5px 2.5px 0;transform:translateY(-1px) rotate(45deg)}
 .lirow.done .lit span{text-decoration:line-through;color:var(--muted)}
+.lirep{display:flex;align-items:center;gap:8px}
+.lirep svg{width:17px;height:17px}
+.liprog{margin:12px 2px 4px}
+.liprog>div{display:flex;justify-content:space-between;align-items:center;font-size:.86rem;color:var(--muted);margin-bottom:6px}
+.liprog .link{font-size:.86rem}
+.liprog>i{display:block;height:7px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.liprog>i b{display:block;height:100%;border-radius:4px;background:var(--primary);transition:width .3s ease}
+.lbox{transition:background-color .15s ease,border-color .15s ease,transform .15s ease}
+.lirow{transition:opacity .22s ease,transform .22s ease}
+.lirow.tick .lbox{background:var(--primary);border-color:var(--primary);transform:scale(1.15)}
+.lirow.tick{opacity:.35;transform:translateX(14px)}
+.lirow.untick{opacity:.35;transform:translateX(-14px)}
 .lix{background:none;border:0;color:var(--muted);font-size:1.4rem;line-height:1;width:40px;height:40px;cursor:pointer}
 .row.dlrow{grid-template-columns:44px minmax(0,1fr) auto;gap:12px}
 .dldate{display:flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:46px;border-radius:10px;background:var(--sunk);font-size:.72rem;color:var(--muted);text-transform:uppercase;line-height:1.1}
@@ -131,11 +143,19 @@ h2+.kvb{border-top:0}
 .cwd{text-align:center;font-size:.75rem;font-weight:600;color:var(--muted);padding:2px 0}
 .cday{aspect-ratio:1/1.05;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:4px 0 3px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;cursor:pointer;font-size:.9rem;font-weight:600;min-width:0}
 .cday.today{border-color:var(--primary);color:var(--primary)}
+.cday{position:relative;overflow:visible}
 .cday.hi{background:color-mix(in srgb,#D4537E 18%,var(--surface))}
 .cday.sel{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .cdots{display:flex;gap:3px;height:6px}
 .hint .dot,.kv .dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:0}
 .cdots i{width:6px;height:6px;border-radius:50%}
+.cday.today{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.cday.today .cdots i{box-shadow:0 0 0 1.5px var(--on-primary)}
+.cday.sel{background:var(--surface)!important;color:var(--ink)!important;border-color:var(--ink)!important;box-shadow:0 0 0 1.5px var(--ink) inset}
+.cday.today.sel{background:var(--primary)!important;color:var(--on-primary)!important}
+.cbar{position:absolute;left:-3px;right:-3px;height:4px;border-radius:0}
+.cbar.s{left:5px;border-top-left-radius:3px;border-bottom-left-radius:3px}
+.cbar.e{right:5px;border-top-right-radius:3px;border-bottom-right-radius:3px}
 .evhi{display:inline-block;font-size:.72rem;font-weight:700;color:#fff;background:#D4537E;border-radius:6px;padding:1px 6px;vertical-align:1px}
 .evcheck{display:flex;gap:10px;align-items:flex-start;margin:14px 0;cursor:pointer}
 .evcheck input{width:22px;height:22px;margin-top:2px;accent-color:#D4537E}
@@ -350,6 +370,66 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .bald summary{list-style:none;cursor:pointer;font-size:.9rem}
 .bald summary::-webkit-details-marker{display:none}
 .bald input{min-height:40px}
+
+/* ---------- Restyling (v51): ombre al posto dei bordi, tocco, dissolvenza ---------- */
+:root{--card-bd:transparent;--card-sh:0 1px 2px rgba(21,48,42,.06),0 6px 20px rgba(21,48,42,.07);--r-card:18px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--card-bd:var(--line);--card-sh:0 1px 0 rgba(255,255,255,.02)}}
+:root[data-theme="dark"]{--card-bd:var(--line);--card-sh:0 1px 0 rgba(255,255,255,.02)}
+.block,.tile,.ctile{border-color:var(--card-bd);box-shadow:var(--card-sh);border-radius:var(--r-card)}
+.block{margin-top:18px;padding:6px 18px}
+.iconbtn,.month{border-color:var(--card-bd);box-shadow:var(--card-sh)}
+.cday{border-color:var(--card-bd);box-shadow:var(--card-sh)}
+.btn,.tile,.ctile,.chip,.cday,.kvb,.lit,.wcard,.stripc,nav.tabs button,nav.sub button,.seg button{transition:transform .12s ease,background-color .15s ease,opacity .2s ease}
+.btn:active,.tile:active,.ctile:active,.chip:active,.cday:active,.stripc:active,nav.tabs button:active,nav.sub button:active,.seg button:active{transform:scale(.96)}
+.kvb:active,.lit:active,.row:active{transform:scale(.985)}
+.wcard:active{transform:translateY(-4px)}
+#view.fade{animation:vin .22s ease both}
+@keyframes vin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){#view.fade{animation:none}*{transition:none!important}}
+/* intestazione di Casa: icona e saluto */
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.bico{width:36px;height:36px;border-radius:10px;overflow:hidden;flex:0 0 36px;box-shadow:var(--card-sh)}
+.bico img{width:100%;height:100%;display:block}
+.bgreet{display:flex;flex-direction:column;gap:3px;min-width:0}
+.bgreet small{font:500 .78rem/1 var(--body);color:var(--muted);letter-spacing:0}
+.bgreet span{font:800 1.15rem/1.1 var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Casa: oggi e domani */
+.strip{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:14px -16px 0;padding:2px 16px 6px}
+.strip::-webkit-scrollbar{display:none}
+.stripc{flex:0 0 auto;min-width:150px;max-width:230px;border:0;border-radius:16px;padding:11px 14px;text-align:left;cursor:pointer;color:#fff}
+.stripc small{display:block;font-size:.76rem;font-weight:600;opacity:.9}
+.stripc b{display:block;font:700 .98rem/1.25 var(--display);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stripc.dl{background:var(--ochre-soft);color:var(--ochre)}
+.stripc.late{background:var(--danger);color:#fff}
+/* Casa: riquadro spese */
+.cs-lab{display:flex;align-items:center;gap:8px;color:var(--primary);font-weight:600;font-size:.9rem;margin-top:12px}
+.cs-lab svg{width:20px;height:20px}
+.cs-big{font:800 2.2rem/1.05 var(--display);letter-spacing:-.02em;margin:6px 0 2px}
+.cs-big small{font-size:.5em;color:var(--muted);font-weight:700}
+.cs-bar{height:7px;border-radius:4px;background:var(--sunk);overflow:hidden;margin:10px 0 6px}
+.cs-bar i{display:block;height:100%;border-radius:4px;background:var(--primary)}
+.cs-sub{font-size:.84rem;color:var(--muted);padding-bottom:14px}
+.tile svg{width:26px;height:26px}
+.tile .mini{height:5px;border-radius:3px;background:var(--sunk);overflow:hidden;margin-top:8px}
+.tile .mini i{display:block;height:100%;background:var(--primary)}
+.tile>span:first-child svg{color:inherit}
+/* Tessere a portafoglio */
+.wallet{display:flex;flex-direction:column;margin-top:10px}
+.wcard{position:relative;height:190px;border:0;border-radius:20px;padding:16px 18px;text-align:left;cursor:pointer;color:#fff;display:flex;flex-direction:column;justify-content:space-between;background-size:cover;background-position:center;box-shadow:0 -1px 0 rgba(255,255,255,.12) inset,0 8px 22px rgba(0,0,0,.18);overflow:hidden}
+.wallet.stack .wcard+.wcard{margin-top:-128px}
+.wcard .wtop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;position:relative}
+.wcard .wn{font:800 1.15rem/1.15 var(--display);text-shadow:0 1px 2px rgba(0,0,0,.25);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wcard .wo{display:block;font:600 .8rem/1.2 var(--body);opacity:.9;margin-top:3px}
+.wcard .wl{flex:0 0 46px;width:46px;height:46px;border-radius:12px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.wcard .wl img{width:78%;height:78%;object-fit:contain}
+.wcard .wl.ini{background:rgba(255,255,255,.22);color:#fff;font:800 1rem/1 var(--display)}
+.wcard .wnum{position:relative;font:600 .85rem/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;opacity:.85}
+.wcard.photo::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,0) 55%,rgba(0,0,0,.35))}
+.wcard::after{content:"";position:absolute;right:-40px;bottom:-60px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.08)}
+.wcard.photo::after{display:none}
+.colsw{display:flex;gap:8px;flex-wrap:wrap}
+.colsw button{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;box-shadow:0 0 0 1px var(--line)}
+.colsw button[aria-pressed="true"]{border-color:var(--bg);box-shadow:0 0 0 2px var(--ink)}
 </style>
 </head>
 <body>
@@ -385,7 +465,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "50 · 22/11/2026";
+const APP_VERSION = "51 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1103,30 +1183,47 @@ const SPESE_VIEWS=["home","movs","cash","check","imp"];
 function spSub(){
   return `<nav class="sub" aria-label="Spese">${[["home","Riepilogo"],["movs","Movimenti"],["cash","Contanti"],["check","Verifiche"],["imp","Importa"]].map(([k,l])=>`<button data-nav="${k}" aria-current="${S.view===k?"page":"false"}">${l}</button>`).join("")}</nav>`;
 }
+function meName(){return payers().find(p=>S.uid&&norm(S.uid).includes(norm(p)))||""}
+function casaHead(){
+  const hr=new Date().getHours(),g=hr>=5&&hr<13?"Buongiorno":hr>=13&&hr<18?"Buon pomeriggio":"Buonasera",me=meName();
+  const d0=new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"});
+  return `<span class="bico"><img src="icon-96.png" alt=""></span><span class="bgreet"><small>${h(d0[0].toUpperCase()+d0.slice(1))}</small><span>${h(g+(me?" "+me:""))}</span></span>`;
+}
+// oggi e domani: eventi, scadenze del giorno e scadenze già passate non pagate
+function casaStrip(){
+  const t=today(),t1=shiftDay(t,1),out=[];
+  for(const x of dls())if(!x.done&&x.d<t)out.push(`<button class="stripc late" data-act="dl-open" data-id="${h(x.id)}"><small>Scaduta il ${ddmm(x.d)}</small><b>${h(x.t)}${x.a?" · "+eur(x.a):""}</b></button>`);
+  for(const [d,lab] of [[t,"Oggi"],[t1,"Domani"]])for(const it of dayItems(d)){
+    if(it.paid)continue;const x=it.x;
+    if(it.k==="dl")out.push(`<button class="stripc dl" data-act="dl-open" data-id="${h(x.id)}"><small>${lab}</small><b>${h(x.t)}${x.a?" · "+eur(x.a):""}</b></button>`);
+    else out.push(`<button class="stripc" style="background:${x.hi?EV_HI:EV_COL}" data-act="ev-open" data-id="${h(x.id)}" data-s="${h(it.s)}"><small>${lab}${x.time?" · "+h(x.time):it.s<d?" · in corso":""}</small><b>${h(x.t)}</b></button>`);
+  }
+  return out.length?`<div class="strip">${out.join("")}</div>`:"";
+}
 function vCasa(){
-  const d0=new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"}),day=d0[0].toUpperCase()+d0.slice(1);
+  const svg=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   let spese="";
-  if(!S.all.length) spese=`<p class="hint" style="padding:6px 0 10px">Nessun movimento ancora: tocca qui per importare un estratto.</p>`;
+  if(!S.all.length) spese=`<div class="cs-lab">${svg('<path d="M3 7h18v12H3z"/><path d="M16 13h2"/><path d="M3 7l3-3h12l3 3"/>')}Spese</div><p class="cs-sub">Nessun movimento ancora: tocca qui per importare un estratto.</p>`;
   else{
     // il mese mostrato è l'ultimo con movimenti importati, così a inizio mese non compare uno zero
     const bank=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,""),ym=bank?ymOf(bank):ymOf(today());
     const mese=new Date(+ym.slice(0,4),+ym.slice(5,7)-1,1).toLocaleDateString("it-IT",{month:"long"});
     const keep=S.page;let F=null,P=null;
     try{S.page=famName();F=pageCorrAccs().size?famFlows(ym,ym):null;P=patrCalc(ym,ymOf(today()))}finally{S.page=keep}
-    const kv=(l,v)=>`<div class="kv"><span>${l}</span><b class="num">${v}</b></div>`;
-    spese=(F?kv("Spese di casa a "+mese,eur(F.spese)):"")
-      +(P&&P.any&&!P.miss.length?kv("Risparmi",eur(P.s1)):"")
-      +(bank?kv("Movimenti importati fino al",itDate(bank)):"");
+    const v=F?F.spese:0,[a,b]=eurSplit(v),pct=F&&F.inc>0?Math.min(100,Math.round(v/F.inc*100)):0;
+    spese=`<div class="cs-lab">${svg('<path d="M3 7h18v12H3z"/><path d="M16 13h2"/><path d="M3 7l3-3h12l3 3"/>')}Spese di casa · ${h(mese)}</div>
+      <div class="cs-big num">${h(a)}<small>${h(b)} €</small></div>
+      ${F&&F.inc>0?`<div class="cs-bar" title="${pct}% di quanto è entrato"><i style="width:${pct}%"></i></div>`:""}
+      <div class="cs-sub">${[F&&F.inc>0?"su "+eur(F.inc)+" entrati":"",P&&P.any&&!P.miss.length?"risparmi "+eur(P.s1):"",bank?"movimenti al "+ddmm(bank):""].filter(Boolean).join(" · ")}</div>`;
   }
-  const tile=(nav,icon,t,sub)=>`<button class="tile" data-nav="${nav}">${icon}<b>${t}</b><span${sub==="In arrivo"?' class="soon"':""}>${sub}</span></button>`;
-  const svg=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-  return `<div class="casa-date">${h(day)}</div>
-  <button class="block" data-nav="spese" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">
-    <h2>Spese</h2>${spese}<div style="height:6px"></div>
-  </button>
+  const cs=cards().filter(c=>c.k!=="cf"),last=cs.slice().sort((a,b)=>(b.u||"").localeCompare(a.u||""))[0];
+  const L=curList(),li=items(L.id),todo=li.filter(x=>!x.done).length,done=li.length-todo;
+  const tile=(nav,icon,col,t,sub,extra)=>`<button class="tile" data-nav="${nav}"><span style="color:${col}">${icon}</span><b>${t}</b><span>${sub}</span>${extra||""}</button>`;
+  return `${casaStrip()}
+  <button class="block" data-nav="spese" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">${spese}</button>
   <div class="tiles">
-    ${tile("tessere",svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9v6M10 9v6M13 9v6M17 9v6"/>'),"Tessere",cards().length?cards().length+(cards().length===1?" salvata":" salvate"):"Aggiungi la prima")}
-    ${tile("liste",svg('<path d="M9 6h12M9 12h12M9 18h12"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/>'),"Liste",(n=>n?n+" da prendere":"Aggiungi cosa serve")(items(curList().id).filter(x=>!x.done).length))}
+    ${tile("tessere",svg('<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M6 15h4"/>'),"#7F77DD","Tessere",last?"Ultima: "+h(last.n):cs.length?cs.length+" salvate":"Aggiungi la prima")}
+    ${tile("liste",svg('<path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/>'),"var(--primary)",h(L.n),todo?todo+" da prendere":"Niente da prendere",li.length?`<span class="mini"><i style="width:${Math.round(done/li.length*100)}%"></i></span>`:"")}
   </div>
   <section class="block">
     <h2 style="display:flex;justify-content:space-between;align-items:center">Prossimi impegni<button class="link" data-nav="scad" style="font-size:.9rem">Calendario ›</button></h2>${casaAgenda()}<div style="height:6px"></div>
@@ -1181,7 +1278,8 @@ function vCards(){
   return `<div class="btns" style="margin:10px 0 4px;align-items:center;justify-content:space-between">
       ${own.length>1?`<div class="chips">${["",...own].map(p=>`<button class="chip" data-act="card-pb" data-p="${h(p)}" aria-pressed="${p===f}">${h(p||"Tutte")}</button>`).join("")}</div>`:"<span></span>"}
       <button class="btn" data-act="card-new" style="padding:9px 14px">+ Aggiungi</button></div>
-    <div class="cgrid">${list.map(c=>`<button class="ctile" data-act="card-open" data-id="${h(c.id)}">${cardFace(c)}<b>${h(c.n||"Tessera")}</b><span>${h(c.pb||"")}</span></button>`).join("")}</div>`+cfBlock;
+    <div class="wallet${list.length>2?" stack":""}">${list.slice().reverse().map(walletCard).join("")}</div>
+    ${list.length>2?`<p class="hint" style="text-align:center;margin:8px 0 0">La più usata è davanti; tocca una carta per aprirla.</p>`:""}`+cfBlock;
 }
 // Codice fiscale: formato, carattere di controllo (lettere per omocodia ammesse) e scrittura a gruppi
 const RE_CF=/^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-EHLMPR-T][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/;
@@ -1203,6 +1301,11 @@ function cfForm(id){
       <input type="file" id="kscan" accept="image/*" capture="environment" hidden><select id="kf" hidden><option value="CODE39" selected></option></select>
       <p class="hint" id="kmsg">Fotografa il codice a barre sul retro della tessera sanitaria, oppure scrivilo: controllo che sia corretto.</p></div>
     <div class="btns"><button class="btn" data-act="card-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="card-del" data-id="${h(id)}">Elimina</button>`:""}</div>`);
+}
+function walletCard(c){
+  const logo=c.foto?"":c.logo?`<span class="wl" data-ini="${h(initials(c.n))}"><img src="${h(c.logo)}" alt="" onerror="const p=this.parentNode;p.className='wl ini';p.textContent=p.dataset.ini"></span>`:`<span class="wl ini">${h(initials(c.n))}</span>`;
+  const bg=c.foto?`background-image:url('${c.foto}');background-color:${cardCol(c)}`:`background:${cardCol(c)}`;
+  return `<button class="wcard${c.foto?" photo":""}" style="${bg}" data-act="card-open" data-id="${h(c.id)}"><span class="wtop"><span style="min-width:0"><span class="wn">${h(c.n||"Tessera")}</span><span class="wo">${h(c.pb||"")}</span></span>${logo}</span><span class="wnum">•••• ${h((c.num||"").slice(-4))}</span></button>`;
 }
 function openCard(id){
   const c=(S.cards||{})[id];if(!c)return;
@@ -1238,6 +1341,7 @@ function cardForm(id){
         <p class="hint" id="klogo">${c.foto?"Usa la foto della tessera.":c.logo?"Logo preso dal sito.":"Scrivi il negozio: cerco il logo dal suo sito."}</p>
         <div class="btns" style="margin:4px 0 0"><button class="btn ghost" data-act="card-photo" style="padding:8px 12px">${c.foto?"Cambia foto":"Foto della tessera"}</button>${c.foto?`<button class="btn ghost" data-act="card-nophoto" style="padding:8px 12px">Togli foto</button>`:""}</div>
         <input type="file" id="kphoto" accept="image/*" capture="environment" hidden></div></div></div>
+    <div class="field"><span class="lab">Colore della carta</span><div class="colsw">${CARD_COLS.map(col=>`<button data-act="card-col" data-c="${col}" style="background:${col}" aria-label="Colore ${col}" aria-pressed="${cardCol(c)===col}"></button>`).join("")}</div></div>
     <div class="btns"><button class="btn" data-act="card-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="card-del" data-id="${h(id)}">Elimina</button>`:""}</div>`);
 }
 // Logo: prima l'icona del sito, poi il servizio di icone di Google; si tiene la prima abbastanza grande (Google dà un mappamondo da 16 px se non trova niente)
@@ -1291,7 +1395,7 @@ async function saveCard(){
   const site=($("#ksite").value||"").trim();
   if(site!==sh.site||(!sh.logo&&site))await refreshLogo();
   const id=sh.cardEdit==="new"?uid():sh.cardEdit,old=(S.cards||{})[id]||{};
-  const data={n,num,f:$("#kf").value||"",pb:$("#kpb").value,site,logo:sh.logo||"",foto:sh.foto||"",col:old.col||"",u:old.u||new Date().toISOString(),by:S.uid||""};
+  const data={n,num,f:$("#kf").value||"",pb:$("#kpb").value,site,logo:sh.logo||"",foto:sh.foto||"",col:sh.col||old.col||"",u:old.u||new Date().toISOString(),by:S.uid||""};
   try{const p=setDoc(doc(S.db,"cards",id),data);S.cards={...(S.cards||{}),[id]:data};closeSheet();render();toast("Tessera salvata");await p}catch(err){toast(errMsg(err))}
 }
 // ---------- Scadenze condivise: data, importo, ripetizione; abbinate ai movimenti e al calendario del telefono ----------
@@ -1426,6 +1530,13 @@ const REPARTI=[
   ["Pulizia","detersiv ammorbident candeggin brillantant anticalcare sgrassator sgrassatore spugn panno_microfibra panni_microfibra stracci scottex carta carta_cucina tovagliol sacchetti sacchi pellicol alluminio piatti lavastoviglie lavatrice pastiglie detergente vetri pavimenti mocio scopa guanti insetticid deodorante_ambiente"],
   ["Bagno","shampoo balsamo bagnoschiuma doccia sapone saponetta dentifric spazzolin collutorio filo_interdentale carta_igienica deodorant assorbent tampon cotton dischetti crema rasoi lamette schiuma_da_barba cerotti pannolin salviett profum lacca gel trucco struccante"]
 ].map(([n,w])=>[n,w.split(" ").filter(Boolean).map(x=>x.replace(/_/g," "))]);
+// icona e colore di ogni reparto
+const REP_ICON={Fresco:["#378ADD",'<path d="M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11"/><path d="M9 4l3 2 3-2M9 20l3-2 3 2"/>'],
+  Dispensa:["#C98A1E",'<path d="M7 4h10v3H7z"/><path d="M6 7h12l-1 13H7z"/><path d="M9 12h6"/>'],
+  Pulizia:["#2F9C95",'<path d="M9 9h6v12H9z"/><path d="M10 9V6h3l3-2v3h-3"/><path d="M18 5h2M18 8h2"/>'],
+  Bagno:["#D4537E",'<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'],
+  Altro:["#888780",'<circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>']};
+function repHead(r){const [c,d]=REP_ICON[r]||REP_ICON.Altro;return `<h2 class="lirep" style="color:${c}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>${h(r)}</h2>`}
 // prima le parole composte (carta igienica → Bagno, prima di carta → Pulizia), poi quelle singole, nell'ordine dei reparti
 function reparto(t){const w=norm(t).split(/[^a-z0-9]+/).filter(Boolean),txt=" "+w.join(" ")+" ";
   for(const [n,keys] of REPARTI)for(const k of keys)if(k.includes(" ")&&txt.includes(" "+k))return n;
@@ -1441,10 +1552,12 @@ function listBody(){
   const row=x=>`<div class="lirow${x.done?" done":""}"><button class="lit" data-act="li-tog" data-id="${h(x.id)}" aria-pressed="${!!x.done}"><i class="lbox" aria-hidden="true"></i><span>${h(x.t)}</span></button><button class="lix" data-act="li-del" data-id="${h(x.id)}" aria-label="Togli ${h(x.t)}">×</button></div>`;
   const have=new Set(todo.map(x=>norm(x.t)));
   const sug=Object.entries((S.lists&&S.lists[L.id]&&S.lists[L.id].h)||{}).filter(([k])=>!have.has(norm(k))).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  return `${sug.length?`<div class="chips" style="margin:8px 0 2px">${sug.map(([k])=>`<button class="chip" data-act="li-sug" data-t="${h(k)}">+ ${h(k)}</button>`).join("")}</div>`:""}
-    ${todo.length?`<section class="block">${order.map(r=>`${multi?`<h2 class="lirep">${h(r)}</h2>`:""}${by[r].sort((a,b)=>a.t.localeCompare(b.t)).map(row).join("")}`).join("")}<div style="height:6px"></div></section>`
+  const tot=all.length,pct=tot?Math.round(done.length/tot*100):0;
+  return `${tot?`<div class="liprog"><div><span>${done.length} su ${tot} ${done.length===1?"preso":"presi"}</span>${done.length?`<button class="link" data-act="li-clear">Svuota presi</button>`:""}</div><i><b style="width:${pct}%"></b></i></div>`:""}
+    ${sug.length?`<div class="chips" style="margin:8px 0 2px">${sug.map(([k])=>`<button class="chip" data-act="li-sug" data-t="${h(k)}">+ ${h(k)}</button>`).join("")}</div>`:""}
+    ${todo.length?`<section class="block">${order.map(r=>`${multi||r!=="Altro"?repHead(r):""}${by[r].sort((a,b)=>a.t.localeCompare(b.t)).map(row).join("")}`).join("")}<div style="height:6px"></div></section>`
       :`<p class="hint" style="margin:16px 2px">${done.length?"Tutto preso.":"Lista vuota: scrivi qui sopra cosa serve, una voce alla volta."}</p>`}
-    ${done.length?`<section class="block"><h2 style="display:flex;justify-content:space-between;align-items:center">Presi (${done.length})<button class="link" data-act="li-clear" style="font-size:.88rem">Svuota</button></h2>${done.map(row).join("")}<div style="height:6px"></div></section>`:""}
+    ${done.length?`<section class="block"><h2>Presi (${done.length})</h2>${done.map(row).join("")}<div style="height:6px"></div></section>`:""}
     ${L.id!=="spesa"?`<p style="margin:16px 2px"><button class="link" data-act="li-dellist" style="color:var(--danger)">Elimina la lista ${h(L.n)}</button></p>`:""}`;
 }
 function vLists(){
@@ -1467,7 +1580,10 @@ async function addItem(t){
   try{await Promise.all([setDoc(doc(S.db,"items",id),data),setDoc(doc(S.db,"lists",L.id),ld,{merge:true})])}catch(err){toast(errMsg(err))}
 }
 async function toggleItem(id){
-  const x=(S.items||{})[id];if(!x)return;const y={...x,done:!x.done,dt:!x.done?new Date().toISOString():""};
+  const x=(S.items||{})[id];if(!x)return;
+  // piccola animazione: la casella si riempie e la voce scivola via prima di spostarsi
+  const row=document.querySelector(`[data-act="li-tog"][data-id="${CSS.escape(id)}"]`);const r=row&&row.closest(".lirow");
+  if(r&&!r.classList.contains("tick")&&!matchMedia("(prefers-reduced-motion: reduce)").matches){r.classList.add(x.done?"untick":"tick");await new Promise(res=>setTimeout(res,260))}const y={...x,done:!x.done,dt:!x.done?new Date().toISOString():""};
   S.items={...S.items,[id]:y};paintList()||render();
   try{await setDoc(doc(S.db,"items",id),y)}catch(err){toast(errMsg(err))}
 }
@@ -1515,8 +1631,11 @@ function vCalendar(){
   let cells="";for(let i=0;i<lead;i++)cells+=`<span></span>`;
   for(let d=1;d<=nd;d++){
     const iso=ym+"-"+String(d).padStart(2,"0"),its=dayItems(iso),hi=its.some(i=>i.k==="ev"&&i.x.hi);
-    const dots=its.slice(0,3).map(i=>`<i style="background:${i.k==="dl"?(i.paid?"var(--muted)":DL_COL):i.x.hi?EV_HI:EV_COL}"></i>`).join("");
-    cells+=`<button class="cday${iso===t?" today":""}${iso===sel?" sel":""}${hi?" hi":""}" data-act="cal-day" data-d="${iso}" aria-label="${d} ${h(title)}${its.length?", "+its.length+" impegni":""}"><span>${d}</span><span class="cdots">${dots}</span></button>`;
+    // eventi su più giorni: barra continua; il resto: puntini
+    const multi=i=>i.k==="ev"&&i.x.d2&&i.x.d2>i.x.d;
+    const dots=its.filter(i=>!multi(i)).slice(0,3).map(i=>`<i style="background:${i.k==="dl"?(i.paid?"var(--muted)":DL_COL):i.x.hi?EV_HI:EV_COL}"></i>`).join("");
+    const bars=its.filter(multi).slice(0,2).map((i,n)=>{const end=shiftDay(i.s,spanDays(i.x.d,i.x.d2));return `<i class="cbar${iso===i.s||(d===1)?" s":""}${iso===end||d===nd?" e":""}" style="background:${i.x.hi?EV_HI:EV_COL};bottom:${3+n*6}px"></i>`}).join("");
+    cells+=`<button class="cday${iso===t?" today":""}${iso===sel?" sel":""}${hi?" hi":""}" data-act="cal-day" data-d="${iso}" aria-label="${d} ${h(title)}${its.length?", "+its.length+" impegni":""}"><span>${d}</span><span class="cdots">${dots}</span>${bars}</button>`;
   }
   const dayList=sel?`<section class="block"><h2 style="display:flex;justify-content:space-between;align-items:center">${h(new Date(sel+"T12:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"}))}<button class="link" data-act="cal-add" data-d="${sel}" style="font-size:.9rem">+ Aggiungi</button></h2>
       ${dayItems(sel).map(itemRow).join("")||`<p class="hint" style="padding-bottom:8px">Niente in questo giorno.</p>`}<div style="height:4px"></div></section>`:"";
@@ -1526,8 +1645,17 @@ function vCalendar(){
   <div class="calhead"><button class="iconbtn" data-act="cal-prev" aria-label="Mese precedente">‹</button><b>${h(title)}</b><button class="iconbtn" data-act="cal-next" aria-label="Mese successivo">›</button></div>
   <div class="cgridm">${["L","M","M","G","V","S","D"].map(x=>`<span class="cwd">${x}</span>`).join("")}${cells}</div>
   <div class="hint" style="display:flex;gap:14px;flex-wrap:wrap;margin:6px 2px"><span><i class="dot" style="background:${EV_COL}"></i> Eventi</span><span><i class="dot" style="background:${EV_HI}"></i> In evidenza</span><span><i class="dot" style="background:${DL_COL}"></i> Scadenze</span></div>
-  ${sel?dayList:`<div class="btns" style="margin:10px 0 0"><button class="btn" data-act="cal-add" data-d="" style="padding:9px 14px">+ Aggiungi</button></div>`}
+  ${sel?dayList:weekAgenda()}
   ${hiList.length?`<section class="block"><h2>In evidenza</h2>${hiList.map(it=>itemRow(it,true)).join("")}<div style="height:4px"></div></section>`:""}`;
+}
+// prossimi 7 giorni, giorno per giorno (solo quelli con qualcosa)
+function weekAgenda(){
+  const t=today();let html="";
+  for(let i=0;i<7;i++){const d=shiftDay(t,i),its=dayItems(d).filter(x=>!x.paid);if(!its.length)continue;
+    const lab=i===0?"Oggi":i===1?"Domani":new Date(d+"T12:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"numeric"});
+    html+=`<h2 class="lirep" style="color:var(--muted)">${h(lab[0].toUpperCase()+lab.slice(1))}</h2>${its.map(it=>itemRow(it)).join("")}`}
+  return `<section class="block"><h2 style="display:flex;justify-content:space-between;align-items:center">Prossimi 7 giorni<button class="link" data-act="cal-add" data-d="" style="font-size:.9rem">+ Aggiungi</button></h2>
+    ${html||`<p class="hint" style="padding-bottom:8px">Settimana libera. Tocca un giorno per vedere o aggiungere impegni.</p>`}<div style="height:4px"></div></section>`;
 }
 function calAdd(d){
   openSheet(`<h3>Aggiungi${d?" il "+itDate(d):""}</h3>
@@ -2547,12 +2675,13 @@ function render(){
   if(gated){$("#monthbox").style.visibility="hidden";$("#view").innerHTML=S.authed===null?`<p class="hint" style="padding-top:30px">Caricamento…</p>`:vLogin();return}
   $("#mlabel").textContent=perLabel();
   const sp=SPESE_VIEWS.includes(S.view);if(sp)S.spView=S.view;
-  $("#monthbox").style.visibility=sp&&S.view!=="imp"?"visible":"hidden";
-  $(".brand").textContent=sp?"Spese":({casa:"Casa",tessere:"Tessere",scad:"Calendario",liste:"Liste"}[S.view]||"Casa");
+  $("#monthbox").style.visibility=sp&&S.view!=="imp"?"visible":"hidden";$("#monthbox").style.display=sp?"":"none";
+  if(S.view==="casa")$(".brand").innerHTML=casaHead();else $(".brand").textContent=sp?"Spese":({tessere:"Tessere",scad:"Calendario",liste:"Liste"}[S.view]||"Casa");
   document.querySelectorAll("nav.tabs [data-nav]").forEach(b=>b.setAttribute("aria-current",(sp?"spese":S.view)===b.dataset.nav?"page":"false"));
   const banner=S.newVer?`<div class="banner" style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between"><span>È disponibile una nuova versione (${h(S.newVer)}).</span><button class="btn" data-act="reload" style="padding:8px 14px">Aggiorna</button></div>`:"";
   const v={casa:vCasa,tessere:vCards,scad:vCalendar,liste:vLists,home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
   const off=navigator.onLine===false?`<div class="banner" style="margin-top:8px">Senza rete: vedi i dati salvati sul telefono. Le modifiche partono appena torna la connessione.</div>`:"";
+  const vw=$("#view");if(S.lastView!==S.view){vw.classList.remove("fade");void vw.offsetWidth;vw.classList.add("fade");S.lastView=S.view}
   $("#view").innerHTML=off+banner+(sp?spSub():"")+v();
 }
 document.addEventListener("focusout",()=>{setTimeout(()=>{if(S.dirty&&!isEditing())render()},0)});
@@ -2608,6 +2737,7 @@ document.addEventListener("click",async e=>{
   else if(act==="close") closeSheet();
   else if(act==="card-new") cardForm("");
   else if(act==="cf-new") cfForm("");
+  else if(act==="card-col"){if(S.sheet){S.sheet.col=el.dataset.c;document.querySelectorAll('[data-act="card-col"]').forEach(b=>b.setAttribute("aria-pressed",String(b===el)))}}
   else if(act==="cf-edit") cfForm(el.dataset.id);
   else if(act==="cf-copy"){try{await navigator.clipboard.writeText(el.dataset.v);toast("Codice fiscale copiato")}catch(_){toast("Copia non riuscita: tieni premuto sul codice per selezionarlo.")}}
   else if(act==="dl-new") dlForm("",el.dataset.d||"");
