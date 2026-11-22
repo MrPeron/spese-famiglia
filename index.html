@@ -503,7 +503,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "57 · 22/11/2026";
+const APP_VERSION = "58 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1847,83 +1847,110 @@ function casaAgenda(){
     if(it.k==="dl"){const cls=n<0?"late":n<=(x.pre??7)?"soon":"";return `<button class="kv kvb" data-act="dl-open" data-id="${h(x.id)}"><span>${h(x.t)}</span><b class="num dlk ${cls}">${ddmm(it.s)}${x.a?" · "+eur(x.a):""}</b></button>`}
     return `<button class="kv kvb" data-act="ev-open" data-id="${h(x.id)}" data-s="${h(it.s)}"><span>${x.hi?`<i class="dot" style="background:${EV_HI};margin-right:6px"></i>`:""}${h(x.t)}</span><b class="num"${x.hi?` style="color:${EV_HI}"`:""}>${n===0?"oggi":n===1?"domani":ddmm(it.s)}${x.time?" · "+h(x.time):""}</b></button>`}).join("")+(more>0?`<button class="kv kvb" data-nav="scad"><span class="hint" style="margin:0">e altri ${more} ${more===1?"impegno":"impegni"}</span><b class="link">Calendario ›</b></button>`:"");
 }
-// ---------- Budget annuale mensilizzato (es. 2027): voci × 12 mesi, proposta dai dati reali, confronto con il consuntivo ----------
+// ---------- Budget annuale mensilizzato, uno per pagina (Alessandro, Federica, Famiglia): voci × 12 mesi, proposta dai movimenti, consuntivo ----------
 const MESI=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
-const BSEC={in:"Entrate",cat:"Spese per categoria",dl:"Scadenze",extra:"Straordinarie e contanti",sav:"Risparmio"};
+const BSEC={in:"Entrate",cat:"Spese per categoria",dl:"Scadenze",extra:"Straordinarie e contanti",casa:"Versamento al conto di casa",sav:"Risparmio"};
 // raggruppamento per governare il mese: le fisse arrivano comunque, le variabili si possono gestire, il risparmio si toglie prima
 const BGRP={in:"Entrate",fix:"Spese fisse",var:"Spese variabili",sav:"Obiettivo di risparmio"};
 const FIX_CATS=new Set(["mutuo","casa","banca","abbonamenti"]);
-function fxOf(r){if(r.fx)return r.fx;if(r.s==="dl")return "fissa";if(r.s==="extra")return "variabile";return r.c&&(FIX_CATS.has(r.c)||catType(r.c)==="fissa")?"fissa":"variabile"}
+const BFAM="Famiglia";
+function fxOf(r){if(r.fx)return r.fx;if(r.s==="dl"||r.s==="casa")return "fissa";if(r.s==="extra")return "variabile";return r.c&&(FIX_CATS.has(r.c)||catType(r.c)==="fissa")?"fissa":"variabile"}
 function grpOf(r){return r.k==="in"?"in":r.k==="sav"?"sav":fxOf(r)==="fissa"?"fix":"var"}
-function budYear(){return S.budYear||(+today().slice(5,7)>=10?+today().slice(0,4)+1:+today().slice(0,4))}
-function budDoc(y){return (S.bud||{})[String(y||budYear())]||{}}
-function budRowsRaw(y){return Object.entries(budDoc(y).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
-// chi non amministra vede le entrate in una riga sola, senza il dettaglio per persona
-function budRows(y){const l=budRowsRaw(y);if(isAdmin())return l;const ins=l.filter(r=>r.k==="in");if(ins.length<2)return l;
-  return [{id:"_in",t:"Entrate della famiglia",k:"in",srcs:ins.map(r=>r.src).filter(Boolean),m:MESI.map((_,i)=>ins.reduce((x,r)=>x+r.m[i],0))},...l.filter(r=>r.k!=="in")]}
-function rowAct(act,r){if(r.srcs){const a=Array(12).fill(0);let any=false;for(const s of r.srcs)if(act[s]){any=true;act[s].forEach((v,i)=>a[i]+=v)}return any?a:null}return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
 function rowSec(r){return r.k==="in"?"in":r.k==="sav"?"sav":(r.s||"cat")}
 function sumArr(a){return a.reduce((x,v)=>x+(+v||0),0)}
+function budYear(){return S.budYear||(+today().slice(5,7)>=10?+today().slice(0,4)+1:+today().slice(0,4))}
+// budget visibili: chi amministra vede tutti; gli altri il proprio e quello di famiglia
+function budScopes(){return isAdmin()?[...payers(),BFAM]:[meName(),BFAM]}
+function budScope(){const l=budScopes();return l.includes(S.budScope)?S.budScope:(l.includes(meName())?meName():l[0])}
+function budCanEdit(sc){return isAdmin()||sc===meName()}
+function budId(y,sc){return (y||budYear())+"-"+(sc||budScope())}
+function budDoc(y,sc){return (S.bud||{})[budId(y,sc)]||{}}
+function budRowsRaw(y,sc){return Object.entries(budDoc(y,sc).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
+function budRows(y,sc){return budRowsRaw(y,sc)}
+function rowAct(act,r){return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
 // ultimo mese con movimenti importati (quindi con consuntivo affidabile)
 function lastDataYm(){const b=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,"");return b?ymOf(b):""}
 function dlPaidIds(){const s=new Set();for(const x of dls())for(const p of x.paid||[])if(p.tx)s.add(p.tx);return s}
-// classificazione comune a proposta e consuntivo: a quale voce va un movimento
-function budKey(t,paidIds){
-  if(t.k==="prelievo")return "extra:contanti";
-  if(t.k==="entrata"){if(isPatr(t))return "";const c=conti()[t.acc];return "in:"+(c&&payers().includes(c.pb)?c.pb:"casa")}
-  if(t.k!=="spesa"||t.s===CASH||isPatrCost(t)||paidByPatr(t)||isPatr(t))return "";
-  // soldi spostati verso i risparmi (anche se letti come spesa) non sono spese del budget
-  if(pCounter(t,new Set(contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta").map(([k])=>k))))return "";
-  if(paidIds.has(t.id))return "dl:"+t.id;
-  if(spType(t)==="straordinaria")return "extra:stra";
-  return "cat:"+(t.c||"altro");
+function budCtx(sc){
+  const fam=sc===BFAM;
+  return {sc,fam,paid:dlPaidIds(),
+    accs:new Set(contoList().filter(([k,v])=>fam?(v.pb===JOINT&&ruolo(k)==="corrente"&&v.t!=="carta"):v.pb===sc).map(([k])=>k)),
+    patr:new Set(contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta").map(([k])=>k))};
 }
-function budPropose(y){
+// a quale voce del budget va un movimento e con quale importo (positivo = entrata per le entrate, uscita per il resto)
+function budKey(t,C){
+  if(!C.accs.has(t.acc))return null;
+  if(t.k==="prelievo")return ["extra:contanti",-t.a];
+  if(t.k==="giroconto"){
+    if(isCardText(t))return null;
+    if(isVincolo(norm((t.x||"")+" "+(t.m||""))))return ["sav",-t.a];
+    const c=counterpart(t)||pCounter(t,C.patr);
+    if(c&&C.patr.has(c.acc))return ["sav",-t.a];
+    if(!c&&ownName(t.m||""))return ["sav",-t.a];
+    const ca=c&&conti()[c.acc];if(!ca)return null;
+    if(C.fam)return payers().includes(ca.pb)?["in:vers:"+ca.pb,t.a]:null;
+    if(ca.pb===JOINT&&ruolo(c.acc)==="corrente")return ["casa",-t.a];
+    return null;
+  }
+  if(t.k==="entrata"){if(isPatr(t))return null;return [C.fam?"in:casa":"in",t.a]}
+  if(t.k!=="spesa"||t.s===CASH||isPatrCost(t)||paidByPatr(t))return null;
+  // soldi spostati verso i risparmi (anche se letti come spesa) non sono spese del budget
+  if(isPatr(t)||pCounter(t,C.patr))return ["sav",-t.a];
+  if(C.paid.has(t.id))return ["dl:"+t.id,-t.a];
+  if(spType(t)==="straordinaria")return ["extra:stra",-t.a];
+  return ["cat:"+(t.c||"altro"),-t.a];
+}
+function budPropose(y,sc){
   const last=lastDataYm(),cur=ymOf(today());if(!last)return null;
   const to=last<cur?last:shiftYM(cur,-1),first=ymOf(S.all.filter(t=>t.s!==CASH).reduce((m,t)=>!m||t.d<m?t.d:m,""));
   let from=shiftYM(to,-11);if(first>from)from=first;let n=0;for(let ym=from;ym<=to;ym=shiftYM(ym,1))n++;if(n<1)return null;
-  const paid=dlPaidIds(),acc={},fixA={};
-  for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>to)continue;const k=budKey(t,paid);if(!k||k.startsWith("dl:"))continue;acc[k]=(acc[k]||0)+Math.abs(t.a)/n;if(k.startsWith("cat:")&&spType(t)==="fissa")fixA[k]=(fixA[k]||0)+Math.abs(t.a)/n}
+  const C=budCtx(sc),acc={},fixA={};
+  for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>to)continue;const r=budKey(t,C);if(!r)continue;const [k,v]=r;if(k.startsWith("dl:"))continue;
+    acc[k]=(acc[k]||0)+v/n;if(k.startsWith("cat:")&&spType(t)==="fissa")fixA[k]=(fixA[k]||0)+v/n}
   const r10=v=>Math.round(v/10)*10,eq=v=>Array(12).fill(r10(v)),rows={};
-  for(const p of payers())if(acc["in:"+p]>5)rows["in-"+hash(p)]={t:"Entrate "+p,k:"in",src:"in:"+p,m:eq(acc["in:"+p])};
-  if(acc["in:casa"]>5)rows["in-casa"]={t:"Altre entrate (conto di casa)",k:"in",src:"in:casa",m:eq(acc["in:casa"])};
+  if(C.fam){
+    for(const p of payers())if(acc["in:vers:"+p]>5)rows["in-"+hash(p)]={t:"Versamento di "+p,k:"in",src:"in:vers:"+p,m:eq(acc["in:vers:"+p])};
+    if(acc["in:casa"]>5)rows["in-casa"]={t:"Altre entrate del conto di casa",k:"in",src:"in:casa",m:eq(acc["in:casa"])};
+  }else if(acc.in>5)rows["in"]={t:"Stipendio e altre entrate",k:"in",src:"in",m:eq(acc.in)};
   for(const [id,nm] of CATS)if(acc["cat:"+id]>5){const fx=FIX_CATS.has(id)||catType(id)==="fissa"||(fixA["cat:"+id]||0)>acc["cat:"+id]*0.5?"fissa":"variabile";rows["c-"+id]={t:nm,k:"out",s:"cat",c:id,fx,src:"cat:"+id,m:eq(acc["cat:"+id])}}
+  if(!C.fam&&acc.casa>5)rows["casa"]={t:"Versamento al conto di casa",k:"out",s:"casa",fx:"fissa",src:"casa",m:eq(acc.casa)};
   if(acc["extra:stra"]>5)rows["x-stra"]={t:"Spese straordinarie (riserva)",k:"out",s:"extra",fx:"variabile",src:"extra:stra",m:eq(acc["extra:stra"])};
   if(acc["extra:contanti"]>5)rows["x-cash"]={t:"Contanti (prelievi)",k:"out",s:"extra",fx:"variabile",src:"extra:contanti",m:eq(acc["extra:contanti"])};
-  // obiettivo di risparmio: quanto è stato messo da parte in media (versamenti verso BBVA, vincoli, Revolut…)
-  let vers=0;try{vers=patrCalc(from,to).vers/n}catch(_){}
-  rows["s-fam"]={t:"Da mettere da parte (famiglia)",k:"sav",src:"sav",m:eq(Math.max(0,vers))};
-  for(const kid of kids())rows["s-"+hash(kid)]={t:"Per "+kid,k:"sav",m:Array(12).fill(0)};
-  // scadenze con importo: nel mese in cui cadono
+  rows["s-main"]={t:C.fam?"Da mettere da parte (famiglia)":"Da mettere da parte",k:"sav",src:"sav",m:eq(Math.max(0,acc.sav||0))};
+  if(C.fam)for(const kid of kids())rows["s-"+hash(kid)]={t:"Per "+kid,k:"sav",m:Array(12).fill(0)};
+  // scadenze con importo, nel mese in cui cadono: nel budget di chi le ha come "Per chi" (le altre in Famiglia)
   const y0=y+"-01-01",y1=y+"-12-31";
-  for(const x of dls()){if(!x.a||x.done&&!x.rep)continue;const m=Array(12).fill(0);for(const d of occurrences(x,y1))if(d>=y0)m[+d.slice(5,7)-1]+=x.a;if(sumArr(m)>0)rows["d-"+x.id]={t:x.t,k:"out",s:"dl",fx:"fissa",c:x.c||"banca",dl:x.id,src:"dl:"+x.id,m}}
+  for(const x of dls()){if(!x.a||x.done&&!x.rep)continue;const mine=C.fam?!payers().includes(x.pb):x.pb===sc;if(!mine)continue;
+    const m=Array(12).fill(0);for(const d of occurrences(x,y1))if(d>=y0)m[+d.slice(5,7)-1]+=x.a;if(sumArr(m)>0)rows["d-"+x.id]={t:x.t,k:"out",s:"dl",fx:"fissa",c:x.c||"banca",dl:x.id,src:"dl:"+x.id,m}}
   return {rows,n,from,to};
 }
 // consuntivo per voce e mese (solo mesi già importati)
-function budActual(y){
-  const last=lastDataYm(),out={},paid=dlPaidIds(),dlOf={};
+function budActual(y,sc){
+  const last=lastDataYm(),out={},C=budCtx(sc),dlOf={};
   for(const x of dls())for(const p of x.paid||[])if(p.tx)dlOf[p.tx]=x.id;
-  for(const t of S.all){if(t.d.slice(0,4)!==String(y))continue;const ym=ymOf(t.d);if(ym>last)continue;let k=budKey(t,paid);if(!k)continue;if(k.startsWith("dl:"))k="dl:"+dlOf[t.id];
-    const a=out[k]||(out[k]=Array(12).fill(0));a[+ym.slice(5,7)-1]+=Math.abs(t.a)}
-  const sv=Array(12).fill(0);let anyS=false;for(let i=0;i<12;i++){const ym=y+"-"+String(i+1).padStart(2,"0");if(!last||ym>last)break;try{sv[i]=patrCalc(ym,ym).vers;anyS=true}catch(_){}}if(anyS)out.sav=sv;
+  for(const t of S.all){if(t.d.slice(0,4)!==String(y))continue;const ym=ymOf(t.d);if(ym>last)continue;const r=budKey(t,C);if(!r)continue;let [k,v]=r;if(k.startsWith("dl:"))k="dl:"+dlOf[t.id];
+    const a=out[k]||(out[k]=Array(12).fill(0));a[+ym.slice(5,7)-1]+=v}
   return out;
 }
 function budMonthsDone(y){const last=lastDataYm();if(!last||last.slice(0,4)<String(y))return 0;if(last.slice(0,4)>String(y))return 12;return +last.slice(5,7)}
+function E0(v){return fmtNum(Math.round(v)).replace(/,00$/,"")+" €"}
 function vBudget(){
-  const y=budYear(),rows=budRows(y),adm=isAdmin(),M=S.budM??"",sel=M===""?null:+M;
-  const head=`<div class="calhead"><button class="iconbtn" data-act="bud-y" data-d="-1" aria-label="Anno precedente">‹</button><b>Budget ${y}</b><button class="iconbtn" data-act="bud-y" data-d="1" aria-label="Anno successivo">›</button></div>`;
-  if(!rows.length) return head+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y}, mese per mese.</h1>
-    <p>Entrate, spese per categoria, scadenze nel mese in cui cadono e risparmio atteso. ${adm?"La proposta parte dalle medie dei movimenti importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
-    ${adm?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}</section>`;
-  const act=budActual(y),done=budMonthsDone(y),val=r=>sel==null?sumArr(r.m):r.m[sel];
+  const y=budYear(),sc=budScope(),rows=budRows(y,sc),ed=budCanEdit(sc),M=S.budM??"",sel=M===""?null:+M;
+  const seg=`<div class="seg pages" style="grid-template-columns:repeat(${budScopes().length},1fr)" role="group" aria-label="Budget di">${budScopes().map(p=>`<button data-act="bud-sc" data-p="${h(p)}" aria-pressed="${p===sc}">${h(p)}</button>`).join("")}</div>`;
+  const head=`${seg}<div class="calhead"><button class="iconbtn" data-act="bud-y" data-d="-1" aria-label="Anno precedente">‹</button><b>Budget ${y}</b><button class="iconbtn" data-act="bud-y" data-d="1" aria-label="Anno successivo">›</button></div>`;
+  const what=sc===BFAM?"del conto di casa: versamenti vostri, spese di casa fisse e variabili, quanto mettere da parte":"di "+h(sc)+": stipendio, spese personali (conti e carte), versamento al conto di casa, risparmio";
+  if(!rows.length) return head+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)}.</h1>
+    <p>Il budget ${what}, mese per mese. ${ed?"La proposta parte dalle medie degli ultimi 12 mesi importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
+    ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}</section>`;
+  const act=budActual(y,sc),done=budMonthsDone(y),val=r=>sel==null?sumArr(r.m):r.m[sel];
   const actOf=r=>{const a=rowAct(act,r);if(!a)return null;if(sel==null)return done?sumArr(a.slice(0,done)):null;return sel<done?a[sel]:null};
   const gt=(g,f)=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+f(r),0),I=gt("in",val),F=gt("fix",val),R_=gt("sav",val),V=gt("var",val),D=I-F-R_,Mg=D-V;
-  const marg=Array.from({length:12},(_,i)=>gt("in",r=>r.m[i])-gt("fix",r=>r.m[i])-gt("sav",r=>r.m[i])-gt("var",r=>r.m[i])),mx=Math.max(1,...marg.map(Math.abs)),sav=marg;
+  const marg=Array.from({length:12},(_,i)=>gt("in",r=>r.m[i])-gt("fix",r=>r.m[i])-gt("sav",r=>r.m[i])-gt("var",r=>r.m[i])),mx=Math.max(1,...marg.map(Math.abs));
   const chips=`<div class="chips budm">${[["","Anno"],...MESI.map((m,i)=>[String(i),m])].map(([v,l])=>`<button class="chip" data-act="bud-m" data-m="${v}" aria-pressed="${String(M)===v}">${l}</button>`).join("")}</div>`;
-  const bars=`<div class="budbars">${sav.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: margine ${eur(v)}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
+  const bars=`<div class="budbars">${marg.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: margine ${eur(v)}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
   const row=r=>{const v=val(r),a=actOf(r),over=a!=null&&(r.k==="in"?a<v*0.95:a>v*1.05);
-    return `<button class="row brow" data-act="bud-row" data-id="${h(r.id)}">${r.c?catDot(r.c):`<i class="dot" style="background:${r.k==="in"?"var(--ok)":"var(--muted)"}"></i>`}
-      <span style="min-width:0"><span class="dlt">${h(r.t)}</span>${r.k==="out"&&r.s==="dl"?`<span class="hint" style="display:block;margin:0">Scadenza del Calendario</span>`:""}${a!=null?`<span class="hint" style="display:block;margin:0">Reale ${eur(a)}${v?` · ${Math.round(a/v*100)}%`:""}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v?a/v*100:0)}%"></i></span>`:""}</span>
+    return `<button class="row brow" data-act="bud-row" data-id="${h(r.id)}">${r.c?catDot(r.c):`<i class="dot" style="background:${r.k==="in"?"var(--ok)":r.k==="sav"?"#378ADD":"var(--muted)"}"></i>`}
+      <span style="min-width:0"><span class="dlt">${h(r.t)}</span>${r.s==="dl"?`<span class="hint" style="display:block;margin:0">Scadenza del Calendario</span>`:""}${a!=null?`<span class="hint" style="display:block;margin:0">Reale ${eur(a)}${v?` · ${Math.round(a/v*100)}%`:""}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v?a/v*100:0)}%"></i></span>`:""}</span>
       <span class="amt num">${eur(v)}</span></button>`};
   const sec=(k,note)=>{const l=rows.filter(r=>grpOf(r)===k).sort((a,b)=>sumArr(b.m)-sumArr(a.m));if(!l.length&&k!=="sav")return "";const t=l.reduce((x,r)=>x+val(r),0);
     return `<section class="block"><h2 style="display:flex;justify-content:space-between">${BGRP[k]}<span class="num">${eur(t)}</span></h2>${note?`<p class="hint" style="margin-top:-2px">${note}</p>`:""}${l.map(row).join("")}<div style="height:4px"></div></section>`};
@@ -1937,20 +1964,21 @@ function vBudget(){
       <div class="bs tot"><span>= Margine</span><b class="num" style="color:${Mg<0?"var(--danger)":"var(--ok)"}">${E0(Mg)}</b></div>
       ${sel!=null&&D>0?`<p class="hint" style="margin:4px 0 10px">Per le variabili: circa ${E0(D/4.33)} a settimana, ${E0(D/new Date(y,sel+1,0).getDate())} al giorno.</p>`:`<div style="height:8px"></div>`}
     </section>
-    <section class="block"><h2>Margine mese per mese</h2>${bars}<p class="hint" style="margin:0">Quanto avanza dopo fisse, risparmio e variabili previste. In rosso i mesi in cui il budget non sta in piedi.</p><p class="hint" style="padding-bottom:8px">${done?`Consuntivo disponibile fino a ${MESI[done-1].toLowerCase()} ${y}: sotto ogni voce c'è il reale.`:`Il confronto con il reale compare man mano che importi i mesi del ${y}.`}</p></section>
-    ${sec("in")}${sec("fix","Arrivano comunque: mutuo, rate, utenze, assicurazioni, scadenze.")}${sec("sav","Si mette da parte all'inizio del mese, non con quello che avanza.")}${sec("var","Quelle che potete governare durante il mese.")}
-    <div class="btns" style="margin-top:14px">${adm?`<button class="btn ghost" data-act="bud-add">+ Voce</button>`:""}<button class="btn ghost" data-act="bud-xlsx">Scarica Excel</button>${adm?`<button class="btn ghost" data-act="bud-propose">Rifai la proposta</button>`:""}</div>
-    <p class="hint">Le scadenze del Calendario con importo entrano nel mese in cui cadono; le spese per categoria non comprendono i pagamenti già abbinati a una scadenza, ma controlla che una stessa spesa non compaia due volte (es. un'assicurazione sia come scadenza sia nella sua categoria).</p>`;
+    <section class="block"><h2>Margine mese per mese</h2>${bars}<p class="hint" style="margin:0">Quanto avanza dopo fisse, risparmio e variabili previste. In rosso i mesi in cui il budget non sta in piedi.</p>
+      <p class="hint" style="padding-bottom:8px">${done?`Consuntivo disponibile fino a ${MESI[done-1].toLowerCase()} ${y}: sotto ogni voce c'è il reale.`:`Il confronto con il reale compare man mano che importi i mesi del ${y}.`}</p></section>
+    ${sec("in")}${sec("fix",sc===BFAM?"Arrivano comunque: mutuo, utenze, assicurazioni, scadenze di casa.":"Arrivano comunque: rate, abbonamenti, scadenze, il versamento al conto di casa.")}${sec("sav","Si mette da parte all'inizio del mese, non con quello che avanza.")}${sec("var","Quelle che si possono governare durante il mese.")}
+    <div class="btns" style="margin-top:14px">${ed?`<button class="btn ghost" data-act="bud-add">+ Voce</button>`:""}<button class="btn ghost" data-act="bud-xlsx">Scarica Excel</button>${ed?`<button class="btn ghost" data-act="bud-propose">Rifai la proposta</button>`:""}</div>
+    <p class="hint">Contano solo i movimenti dei conti ${sc===BFAM?"cointestati correnti (conto di casa)":"e delle carte di "+h(sc)}. Le scadenze del Calendario con importo entrano nel mese in cui cadono, nel budget della persona indicata in "Per chi" (le altre in Famiglia); controlla che una stessa spesa non compaia due volte (es. un'assicurazione sia come scadenza sia nella sua categoria).</p>`;
 }
-function E0(v){return fmtNum(Math.round(v)).replace(/,00$/,"")+" €"}
 function budRowForm(id){
-  const y=budYear(),r=id?budRows(y).find(x=>x.id===id):{t:"",k:"out",s:"cat",c:"altro",m:Array(12).fill(0)};if(!r)return;
-  const adm=isAdmin();S.sheet={budRow:id||"new"};
+  const y=budYear(),sc=budScope(),r=id?budRows(y,sc).find(x=>x.id===id):{t:"",k:"out",s:"cat",c:"altro",m:Array(12).fill(0)};if(!r)return;
+  S.sheet={budRow:id||"new"};
   const opt=(v,l,sel)=>`<option value="${h(v)}"${v===sel?" selected":""}>${h(l)}</option>`;
-  if(!adm){openSheet(`<h3>${h(r.t)}</h3><div class="sub">${BGRP[grpOf(r)]} · totale ${eur(sumArr(r.m))}</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);return}
+  if(!budCanEdit(sc)){openSheet(`<h3>${h(r.t)}</h3><div class="sub">${BGRP[grpOf(r)]} · totale ${eur(sumArr(r.m))}</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);return}
+  const sk=rowSec(r);
   openSheet(`<h3>${id?"Modifica voce":"Nuova voce"}</h3>
     <div class="field"><label for="bt">Voce</label><input id="bt" value="${h(r.t)}" placeholder="Vacanze estive" autocomplete="off"></div>
-    <div class="two"><div class="field" style="margin-top:0"><label for="bk">Sezione</label><select id="bk">${opt("in","Entrata",r.k==="in"?"in":"")}${opt("cat","Spesa per categoria",r.k==="out"?rowSec(r):"")}${opt("dl","Scadenza",r.k==="out"?rowSec(r):"")}${opt("extra","Straordinaria / contanti",r.k==="out"?rowSec(r):"")}${opt("sav","Obiettivo di risparmio",r.k==="sav"?"sav":"")}</select></div>
+    <div class="two"><div class="field" style="margin-top:0"><label for="bk">Sezione</label><select id="bk">${opt("in","Entrata",sk)}${opt("cat","Spesa per categoria",sk)}${opt("dl","Scadenza",sk)}${opt("extra","Straordinaria / contanti",sk)}${sc!==BFAM?opt("casa","Versamento al conto di casa",sk):""}${opt("sav","Obiettivo di risparmio",sk)}</select></div>
       <div class="field" style="margin-top:0"><label for="bc">Categoria</label><select id="bc">${CATS.map(([k,n])=>opt(k,n,r.c||"altro")).join("")}</select></div></div>
     <div class="field" style="margin-top:0"><label for="bfx">Tipo di spesa</label><select id="bfx">${opt("fissa","Fissa: arriva comunque",fxOf(r))}${opt("variabile","Variabile: si può governare",fxOf(r))}</select><p class="hint">Conta solo per le spese; per entrate e risparmio non serve.</p></div>
     <div class="field"><span class="lab">Importi per mese</span>
@@ -1960,29 +1988,30 @@ function budRowForm(id){
     <div class="btns"><button class="btn" data-act="bud-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="bud-del">Elimina</button>`:""}</div>`);
 }
 async function budSaveRow(){
-  const sh=S.sheet;if(!sh||!sh.budRow)return;const y=budYear();
+  const sh=S.sheet;if(!sh||!sh.budRow)return;const y=budYear(),sc=budScope();
   const t=$("#bt").value.trim();if(!t){toast("Scrivi il nome della voce.");return}
   const m=MESI.map((_,i)=>{const v=num($("#bm"+i).value||"0");return isNaN(v)?0:Math.round(v*100)/100});
-  const sk=$("#bk").value,id=sh.budRow==="new"?uid():sh.budRow,old=budRowsRaw(y).find(x=>x.id===id)||{};
-  const row={...old,t,k:sk==="in"?"in":sk==="sav"?"sav":"out",s:sk==="in"||sk==="sav"?"":sk,c:sk==="in"||sk==="sav"?"":$("#bc").value,fx:sk==="in"||sk==="sav"?"":$("#bfx").value,m};delete row.id;
-  await budWrite(y,{rows:{[id]:row}},"Voce salvata");
+  const sk=$("#bk").value,id=sh.budRow==="new"?uid():sh.budRow,old=budRowsRaw(y,sc).find(x=>x.id===id)||{};
+  const k=sk==="in"?"in":sk==="sav"?"sav":"out",out=k==="out";
+  const row={...old,t,k,s:out?sk:"",c:out&&sk!=="casa"?$("#bc").value:"",fx:out?$("#bfx").value:"",m};delete row.id;
+  await budWrite(y,sc,{rows:{[id]:row}},"Voce salvata");
 }
-async function budWrite(y,patch,msg){
-  const cur=budDoc(y),rows={...(cur.rows||{})};for(const [k,v] of Object.entries(patch.rows||{}))if(v===null)delete rows[k];else rows[k]=v;
-  S.bud={...(S.bud||{}),[String(y)]:{...cur,rows}};closeSheet();render();if(msg)toast(msg);
+async function budWrite(y,sc,patch,msg){
+  const key=budId(y,sc),cur=budDoc(y,sc),rows={...(cur.rows||{})};for(const [k,v] of Object.entries(patch.rows||{}))if(v===null)delete rows[k];else rows[k]=v;
+  S.bud={...(S.bud||{}),[key]:{...cur,y,sc,rows}};closeSheet();render();if(msg)toast(msg);
   const fsRows={};for(const [k,v] of Object.entries(patch.rows||{}))fsRows[k]=v===null?deleteField():v;
-  try{await setDoc(doc(S.db,"budget",String(y)),{rows:fsRows,upd:new Date().toISOString(),by:S.uid||""},{merge:true})}catch(err){toast(errMsg(err))}
+  try{await setDoc(doc(S.db,"budget",key),{y,sc,rows:fsRows,upd:new Date().toISOString(),by:S.uid||""},{merge:true})}catch(err){toast(errMsg(err))}
 }
 async function budDoPropose(){
-  const y=budYear(),P=budPropose(y);if(!P){toast("Servono movimenti importati per fare la proposta.");return}
-  const had=budRowsRaw(y).length;if(had&&!confirm("Rifare la proposta? Le voci attuali del budget "+y+" vengono sostituite."))return;
-  const del={};for(const r of budRowsRaw(y))del[r.id]=null;
-  await budWrite(y,{rows:{...del,...P.rows}},`Proposta creata dalle medie di ${P.n} ${P.n===1?"mese":"mesi"}: correggila voce per voce`);
+  const y=budYear(),sc=budScope(),P=budPropose(y,sc);if(!P){toast("Servono movimenti importati per fare la proposta.");return}
+  const had=budRowsRaw(y,sc).length;if(had&&!confirm("Rifare la proposta? Le voci attuali di questo budget vengono sostituite."))return;
+  const del={};for(const r of budRowsRaw(y,sc))del[r.id]=null;
+  await budWrite(y,sc,{rows:{...del,...P.rows}},`Proposta dalle medie di ${P.n} ${P.n===1?"mese":"mesi"} (${monShort(P.from)} ${P.from.slice(2,4)} – ${monShort(P.to)} ${P.to.slice(2,4)}): correggila voce per voce`);
 }
 function budXlsx(){
   if(!window.XLSX){toast("Excel non disponibile senza rete la prima volta.");return}
-  const y=budYear(),rows=budRows(y),act=budActual(y),done=budMonthsDone(y);
-  const aoa=[["Budget "+y],[],["Voce","Gruppo","Categoria",...MESI,"Totale"]],T={};
+  const y=budYear(),sc=budScope(),rows=budRows(y,sc),act=budActual(y,sc),done=budMonthsDone(y);
+  const aoa=[["Budget "+y+" · "+sc],[],["Voce","Gruppo","Categoria",...MESI,"Totale"]],T={};
   for(const k of ["in","fix","sav","var"]){const l=rows.filter(r=>grpOf(r)===k);
     for(const r of l)aoa.push([r.t,BGRP[k],r.c?(CAT[r.c]||CAT.altro).n:"",...r.m,sumArr(r.m)]);
     const t=MESI.map((_,i)=>l.reduce((x,r)=>x+r.m[i],0));T[k]=t;aoa.push(["Totale "+BGRP[k].toLowerCase(),"","",...t,sumArr(t)]);aoa.push([])}
@@ -1990,10 +2019,10 @@ function budXlsx(){
   aoa.push(["Disponibile per le variabili","","",...disp,sumArr(disp)]);aoa.push(["Margine (dopo le variabili previste)","","",...mg,sumArr(mg)]);
   const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:34},{wch:22},{wch:22},...MESI.map(()=>({wch:10})),{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,"Budget "+y);
-  if(done){const a2=[["Consuntivo "+y+" (mesi importati)"],[],["Voce",...MESI.slice(0,done),"Totale reale","Budget stessi mesi","Differenza"]];
+  if(done){const a2=[["Consuntivo "+y+" · "+sc+" (mesi importati)"],[],["Voce",...MESI.slice(0,done),"Totale reale","Budget stessi mesi","Differenza"]];
     for(const r of rows){const a=(rowAct(act,r)||Array(12).fill(0)).slice(0,done),b=sumArr(r.m.slice(0,done));a2.push([r.t,...a,sumArr(a),b,sumArr(a)-b])}
     const w2=XLSX.utils.aoa_to_sheet(a2);w2["!cols"]=[{wch:34},...MESI.slice(0,done).map(()=>({wch:10})),{wch:12},{wch:14},{wch:12}];XLSX.utils.book_append_sheet(wb,w2,"Consuntivo")}
-  XLSX.writeFile(wb,"Budget "+y+".xlsx");
+  XLSX.writeFile(wb,"Budget "+y+" "+sc+".xlsx");
 }
 function vSoon(k){
   const t={tessere:["Tessere fedeltà","Codici a barre e QR delle vostre tessere, con il logo del negozio o la foto della tessera, pronti alla cassa anche senza rete."],
@@ -3025,12 +3054,13 @@ document.addEventListener("click",async e=>{
   else if(act==="cal-day"){S.calDay=S.calDay===el.dataset.d?"":el.dataset.d;render()}
   else if(act==="cal-add") calAdd(el.dataset.d||"");
   else if(act==="ev-new") evForm("",el.dataset.d||"");
+  else if(act==="bud-sc"){S.budScope=el.dataset.p;S.budM="";render()}
   else if(act==="bud-y"){S.budYear=budYear()+(+el.dataset.d);render()}
   else if(act==="bud-m"){const v=el.dataset.m;S.budM=v===""||String(S.budM??"")===v?"":+v;render()}
   else if(act==="bud-row") budRowForm(el.dataset.id);
   else if(act==="bud-add") budRowForm("");
   else if(act==="bud-save") budSaveRow();
-  else if(act==="bud-del"){const id=S.sheet&&S.sheet.budRow;if(!id||!confirm("Eliminare questa voce del budget?"))return;budWrite(budYear(),{rows:{[id]:null}},"Voce eliminata")}
+  else if(act==="bud-del"){const id=S.sheet&&S.sheet.budRow;if(!id||!confirm("Eliminare questa voce del budget?"))return;budWrite(budYear(),budScope(),{rows:{[id]:null}},"Voce eliminata")}
   else if(act==="bud-eq"){const v=num($("#btot").value||"");if(isNaN(v)){toast("Scrivi il totale dell'anno.");return}const m=Math.round(v/12*100)/100;for(let i=0;i<12;i++)$("#bm"+i).value=fmtNum(i<11?m:Math.round((v-m*11)*100)/100)}
   else if(act==="bud-propose") budDoPropose();
   else if(act==="bud-xlsx") budXlsx();
