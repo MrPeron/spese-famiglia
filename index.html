@@ -432,7 +432,7 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .budsum{padding-top:10px}
 .wkc{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 0;color:inherit;font:inherit;cursor:pointer}.wkc:first-of-type{border-top:0}
 .wkc .wkcl{display:block;color:var(--muted);font-size:.85rem}.wkc .wkcl em{font-style:normal;font-size:.75rem;background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:1px 6px;margin-left:4px}
-.wkc>b{display:block;font:800 1.6rem/1.2 var(--display);margin:2px 0 4px}.wkc>b.neg{color:var(--danger)}.wkc small{display:block;color:var(--muted);font-size:.82rem;margin-top:4px}
+.wkc>b{display:block;font:800 1.6rem/1.2 var(--display);margin:2px 0 4px}.wkc>b small,.wks{display:inline!important;margin:0!important;font:500 .95rem var(--body);color:var(--muted)}.wkc .neg{color:var(--danger)}.wkc>b.neg{color:var(--danger)}.wkc small{display:block;color:var(--muted);font-size:.82rem;margin-top:4px}
 .qadd{padding:10px 18px}.qtag{background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:0 6px}.qbig{font:700 1.5rem/1.2 var(--display)!important}
 .wkgo{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:8px 0 4px;padding:12px 14px;border:1px solid var(--card-bd,var(--line));border-radius:var(--r-card,14px);background:var(--surface);box-shadow:var(--card-sh);color:inherit;text-align:left;cursor:pointer;font:inherit}
 .wkgo small{display:block;color:var(--muted);font-size:.82rem}.wkgo>span:last-child{font-size:1.4rem;color:var(--muted)}
@@ -515,7 +515,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "62 · 22/11/2026";
+const APP_VERSION = "63 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1181,9 +1181,10 @@ function vPersonal(){
   // spese personali per categoria (escluse quelle pagate dal patrimonio), con i contanti non attribuiti
   const sp=spOf(tx).filter(t=>!paidByPatr(t)&&!isMutuoCasa(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
-  const cats=Object.entries(byC).filter(([,v])=>v>0.004).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
+  const BB=perCatBud(isFam()?BFAM:S.page);for(const c in BB)if(c!=="_ys"&&!(c in byC))byC[c]=0;
+  const cats=Object.entries(byC).filter(([k,v])=>v>0.004||BB[k]>0).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
   const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
-    :`<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span>${h((CAT[c]||CAT.altro).n)}</span><span class="amt num">${eur(v)}</span></button>`;
+    :catBudRow(c,v,BB);
   // ultimi mesi
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...allocation(S.all.filter(t=>ymOf(t.d)===ym&&inPage(t)),ym,ym)})).filter(r=>r.inc||r.spese||r.casa);
@@ -1200,7 +1201,7 @@ function vPersonal(){
     ${top.map(catRow).join("")}
     ${rest.length?(S.catOpen?rest.map(catRow).join("")+`<button class="row" data-act="catmore"><i class="dot" style="background:transparent"></i><span class="link">Mostra meno</span><span></span></button>`
       :`<button class="row" data-act="catmore" aria-expanded="false"><i class="dot" style="background:var(--line)"></i><span>Altre ${rest.length} categorie</span><span class="amt num">${eur(restV)}</span></button>`):""}
-  </section>`:""}
+  ${catBudNote(BB)}</section>`:""}
   ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
     <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese e casa</span><span>Avanzato</span></div>
     ${rows.slice().reverse().map(r=>{const av=r.messo+r.rim;return `<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese+r.casa+r.altri)}</span><span class="num ${av>=0?"ok":"ko"}">${av>=0?"+":"−"}${fmtNum(Math.abs(av))}</span></button>`}).join("")}
@@ -1286,7 +1287,7 @@ function vCasa(){
   const tile=(nav,icon,col,t,sub,extra)=>`<button class="tile" data-nav="${nav}"><span style="color:${col}">${icon}</span><b>${t}</b><span>${sub}</span>${extra||""}</button>`;
   return `${casaStrip()}
   <button class="block" data-nav="spese" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">${spese}</button>
-  ${casaWeek()}
+  ${casaMonth()}
   <div class="tiles">
     ${tile("tessere",svg('<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M6 15h4"/>'),"#7F77DD","Tessere",last?"Ultima: "+h(last.n):cs.length?cs.length+" salvate":"Aggiungi la prima")}
     ${tile("liste",svg('<path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/>'),"var(--primary)",h(L.n),todo?todo+" da prendere":"Niente da prendere",li.length?`<span class="mini"><i style="width:${Math.round(done/li.length*100)}%"></i></span>`:"")}
@@ -1993,7 +1994,7 @@ function vBudget(){
       <span class="amt num">${eur(v)}</span></button>`};
   const sec=(k,note)=>{const l=rows.filter(r=>grpOf(r)===k).sort((a,b)=>sumArr(b.m)-sumArr(a.m));if(!l.length&&k!=="sav")return "";const t=l.reduce((x,r)=>x+val(r),0);
     return `<section class="block"><h2 style="display:flex;justify-content:space-between">${BGRP[k]}<span class="num">${eur(t)}</span></h2>${note?`<p class="hint" style="margin-top:-2px">${note}</p>`:""}${l.map(row).join("")}<div style="height:4px"></div></section>`};
-  return `${head}<button class="wkgo" data-nav="wk"><span><b>Il mese a settimane</b><small>Quanto puoi ancora spendere questa settimana</small></span><span aria-hidden="true">›</span></button>${chips}
+  return `${head}<button class="wkgo" data-nav="wk"><span><b>Il mese</b><small>A che punto sono le spese rispetto al budget</small></span><span aria-hidden="true">›</span></button>${chips}
     <section class="block budsum">
       <div class="bs"><span>Entrate</span><b class="num">${E0(I)}</b></div>
       <div class="bs m"><span>− Spese fisse</span><b class="num">${E0(F)}</b></div>
@@ -2009,14 +2010,7 @@ function vBudget(){
     <div class="btns" style="margin-top:14px">${ed?`<button class="btn ghost" data-act="bud-add">+ Voce</button>`:""}<button class="btn ghost" data-act="bud-xlsx">Scarica Excel</button>${ed?`<button class="btn ghost" data-act="bud-propose">Rifai la proposta</button>`:""}</div>
     <p class="hint">Contano solo i movimenti dei conti ${sc===BFAM?"cointestati correnti (conto di casa)":"e delle carte di "+h(sc)}. Le scadenze del Calendario con importo entrano nel mese in cui cadono, nel budget della persona indicata in "Per chi" (le altre in Famiglia); controlla che una stessa spesa non compaia due volte (es. un'assicurazione sia come scadenza sia nella sua categoria).</p>`;
 }
-// ---------- Il mese a settimane: quanto si può ancora spendere per le variabili ----------
-// le settimane vanno da lunedì a domenica, tagliate ai confini del mese; il budget delle variabili si divide in proporzione ai giorni
-function wkWeeks(ym){const [y,m]=ym.split("-").map(Number),dim=new Date(y,m,0).getDate(),out=[];let s=1;
-  for(let d=1;d<=dim;d++){const dow=new Date(y,m-1,d).getDay();if(dow===0||d===dim){out.push({a:ym+"-"+String(s).padStart(2,"0"),b:ym+"-"+String(d).padStart(2,"0"),n:d-s+1});s=d+1}}
-  // spezzoni di 1-2 giorni a inizio o fine mese si uniscono alla settimana accanto
-  if(out.length>1&&out[0].n<=2){out[1]={a:out[0].a,b:out[1].b,n:out[0].n+out[1].n};out.shift()}
-  const L=out.length;if(L>1&&out[L-1].n<=2){out[L-2]={a:out[L-2].a,b:out[L-1].b,n:out[L-2].n+out[L-1].n};out.pop()}
-  return out}
+// ---------- Il mese: a che punto sono le spese rispetto al budget ----------
 // che tipo di voce è un movimento per il budget: entrata, fissa, risparmio o variabile
 function wkGrp(k,rows){if(k.startsWith("in:"))return "in";if(k==="sav")return "sav";if(k==="casa"||k.startsWith("dl:"))return "fix";
   const r=rows.find(x=>x.src===k);if(r)return grpOf(r);if(k.startsWith("cat:"))return fxOf({c:k.slice(4)})==="fissa"?"fix":"var";return "var"}
@@ -2063,76 +2057,63 @@ async function quickSave(){
 }
 async function quickDel(){const id=S.sheet&&S.sheet.quick;if(!id||id==="new"||!confirm("Eliminare questa spesa al volo?"))return;
   const m={...S.quick};delete m[id];S.quick=m;S.quickVer=(S.quickVer||0)+1;closeSheet();render();toast("Eliminata");try{await deleteDoc(doc(S.db,"quick",id))}catch(err){toast(errMsg(err))}}
-// i conti del mese per un budget: settimane, speso, quanto resta
+// i conti del mese per un budget: previsto, speso (movimenti + spese al volo non ancora nell'estratto), quanto resta
 function wkData(sc,ym){
   const y=+ym.slice(0,4),mi=+ym.slice(5,7)-1,by=wkBudYear(y,sc),t0=today(),cur=ymOf(t0);if(by==null)return null;
   const rows=budRows(by,sc),C=budCtx(sc),dim=new Date(y,mi+1,0).getDate(),gs=g=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+r.m[mi],0);
   const V=gs("var"),F=gs("fix"),I=gs("in"),R_=gs("sav"),Mg=I-F-R_-V;
+  const lastD=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,""),closed=lastD>=ym+"-"+String(dim).padStart(2,"0");
   const tx=[];for(const t of S.all){if(ymOf(t.d)!==ym)continue;const r=budKey(t,C);if(!r)continue;tx.push({t,k:r[0],v:r[1],g:wkGrp(r[0],rows)})}
-  // spese al volo non ancora trovate nell'estratto
-  const qm=quickMatch();for(const q of quickList())if(q.sc===sc&&ymOf(q.d)===ym&&!qm[q.id]){const k="cat:"+(q.c||"altro");tx.push({t:{d:q.d},q,k,v:q.a,g:wkGrp(k,rows)})}
-  const vt=tx.filter(x=>x.g==="var"),ft=tx.filter(x=>x.g==="fix");
-  const lastD=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,"");
-  const live=ym===cur,past=ym<cur,spent=vt.reduce((x,o)=>x+o.v,0);
-  let before=0,base=null;
-  const wrows=wkWeeks(ym).map((w,i)=>{const used=vt.filter(o=>o.t.d>=w.a&&o.t.d<=w.b).reduce((x,o)=>x+o.v,0),plan=V*w.n/dim;
-    const st=w.b<t0||past?"done":w.a<=t0?"now":"next";
-    // dalla settimana in corso in poi il riporto si fissa all'inizio della settimana e si divide sui giorni rimasti
-    if(st!=="done"&&base==null){const left=dim-(+w.a.slice(8,10))+1;base=(V-before)/left}
-    const adj=st==="done"?plan:base*w.n;const o={w,i,used,plan,adj,st};before+=used;return o});
-  const now=live?wrows.find(o=>o.st==="now"):null;
-  return {sc,ym,y,mi,by,rows,dim,V,F,I,R_,Mg,vt,ft,spent,wrows,now,live,past,lastD,t0,resto:V-spent,daysLeft:live?dim-(+t0.slice(8,10))+1:0};
+  // spese al volo non ancora trovate nell'estratto; a mese chiuso e importato conta solo l'estratto, come nel consuntivo
+  const qm=quickMatch(),qs=quickList().filter(q=>q.sc===sc&&ymOf(q.d)===ym);
+  if(!closed)for(const q of qs)if(!qm[q.id]){const k="cat:"+(q.c||"altro");tx.push({t:{d:q.d},q,k,v:q.a,g:wkGrp(k,rows)})}
+  const vt=tx.filter(x=>x.g==="var"),ft=tx.filter(x=>x.g==="fix"),sV=vt.reduce((x,o)=>x+o.v,0),sF=ft.reduce((x,o)=>x+o.v,0);
+  const live=ym===cur,past=ym<cur;
+  return {sc,ym,y,mi,by,rows,dim,V,F,I,R_,Mg,vt,ft,qs,sV,sF,spent:sV+sF,plan:V+F,live,past,closed,lastD,t0,daysLeft:live?dim-(+t0.slice(8,10))+1:0};
 }
-// riquadro in Casa: quanto si può ancora spendere questa settimana
-function casaWeek(){
+// riquadro in Casa: a che punto è il mese rispetto al budget
+function casaMonth(){
   const me=meName(),ym=ymOf(today()),L=[me,BFAM].filter(Boolean).map(sc=>wkData(sc,ym)).filter(Boolean);
-  const add=`<button class="btn qadd" data-act="q-new">+ Spesa al volo</button>`;
-  if(!L.length)return `<section class="block"><h2>Questa settimana</h2><p class="hint">Prepara il budget (Spese → Budget) per vedere quanto potete spendere ogni settimana.</p><div class="btns" style="margin-bottom:12px">${add}</div></section>`;
-  const qn=quickList().filter(q=>!quickMatch()[q.id]&&ymOf(q.d)===ym).length;
-  return `<section class="block wkcasa"><h2 style="display:flex;justify-content:space-between;align-items:center">Questa settimana<button class="link" data-act="wk-open" data-p="${h(L[0].sc)}" style="font-size:.9rem">Il mese ›</button></h2>
-    ${L.map(D=>{const n=D.now;if(!n)return "";const can=n.adj-n.used,dl=(+n.w.b.slice(8,10))-(+D.t0.slice(8,10))+1;
+  const add=`<button class="btn qadd" data-act="q-new">+ Spesa al volo</button>`,mese=MESI_L[+ym.slice(5,7)-1].toLowerCase();
+  if(!L.length)return `<section class="block"><h2>Questo mese</h2><p class="hint">Prepara il budget (Spese → Budget) per vedere a che punto siete con le spese del mese.</p><div class="btns" style="margin-bottom:12px">${add}</div></section>`;
+  return `<section class="block wkcasa"><h2 style="display:flex;justify-content:space-between;align-items:center">Budget di ${h(mese)}<button class="link" data-act="wk-open" data-p="${h(L[0].sc)}" style="font-size:.9rem">Dettaglio ›</button></h2>
+    ${L.map(D=>{const left=D.plan-D.spent,over=left<0,pct=D.plan>0?D.spent/D.plan*100:100;
       return `<button class="wkc" data-act="wk-open" data-p="${h(D.sc)}"><span class="wkcl">${D.sc===BFAM?"Conto di casa":"Le tue spese"}${D.by!==D.y?` <em>prova ${D.by}</em>`:""}</span>
-        <b class="num ${can<0?"neg":""}">${E0(can)}</b><span class="bpb"><i class="${n.used>n.adj?"ko":""}" style="width:${Math.min(100,n.adj>0?n.used/n.adj*100:100)}%"></i></span>
-        <small>${can<0?"sforato questa settimana":"da spendere fino a domenica"}${dl>1&&can>0?` · ${E0(can/dl)} al giorno`:""} · nel mese ${E0(D.resto)} su ${E0(D.V)}</small></button>`}).join("")}
-    <div class="btns" style="margin:10px 0 12px;align-items:center">${add}${qn?`<span class="hint" style="margin:0">${qn} al volo nel mese</span>`:""}</div>
+        <b class="num">${E0(D.spent)}<small> su ${E0(D.plan)}</small></b><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,pct)}%"></i></span>
+        <small>${over?`<span class="neg">sforato di ${E0(-left)}</span>`:`restano ${E0(left)}`} · ${Math.round(pct)}% · ${D.daysLeft} giorni alla fine${D.V?` · variabili ${E0(D.sV)} su ${E0(D.V)}`:""}</small></button>`}).join("")}
+    <div class="btns" style="margin:10px 0 12px">${add}</div>
     <p class="hint" style="margin:-4px 0 10px">${L[0].lastD?`Estratti importati fino al ${ddmm(L[0].lastD)}; `:""}quello che spendi dopo segnalalo al volo.</p></section>`;
 }
 function vWeek(){
   const sc=budScope(),ym=wkYm(),y=+ym.slice(0,4),mi=+ym.slice(5,7)-1,D=wkData(sc,ym);
   const seg=`<div class="seg pages" style="grid-template-columns:repeat(${budScopes().length},1fr)" role="group" aria-label="Budget di">${budScopes().map(p=>`<button data-act="bud-sc" data-p="${h(p)}" aria-pressed="${p===sc}">${h(p)}</button>`).join("")}</div>`;
   const head=`<div class="btns" style="margin:4px 0 0;justify-content:space-between;align-items:center"><button class="link" data-nav="bud">‹ Torna al budget</button><button class="btn ghost" data-act="q-new" style="padding:8px 14px">+ Spesa al volo</button></div>${seg}<div class="calhead"><button class="iconbtn" data-act="wk-m" data-d="-1" aria-label="Mese precedente">‹</button><b>${h(MESI_L[mi]+" "+y)}</b><button class="iconbtn" data-act="wk-m" data-d="1" aria-label="Mese successivo">›</button></div>`;
-  if(!D)return head+`<section class="empty" style="padding-top:8px"><h1>Serve prima il budget.</h1><p>Il mese a settimane parte dalle spese variabili previste nel budget ${sc===BFAM?"della famiglia":"di "+h(sc)}.</p><div class="btns"><button class="btn" data-nav="bud">Vai al budget</button></div></section>`;
-  const {by,rows,V,F,I,R_,Mg,vt,ft,spent,wrows,now,live,past,lastD,t0,resto,daysLeft,dim}=D;
-  let hero;
-  if(now){const can=now.adj-now.used,dl=(+now.w.b.slice(8,10))-(+t0.slice(8,10))+1;
-    hero=`<section class="block wkhero"><small>Questa settimana (${ddmm(now.w.a)}–${ddmm(now.w.b)}) puoi ancora spendere</small><b class="num ${can<0?"neg":""}">${E0(can)}</b>
-      <span class="bpb"><i class="${now.used>now.adj?"ko":""}" style="width:${Math.min(100,now.adj>0?now.used/now.adj*100:100)}%"></i></span>
-      <p class="hint" style="margin:6px 0 0">Spesi ${E0(now.used)} su ${E0(now.adj)} · ${dl>1?`circa ${E0(Math.max(0,can)/dl)} al giorno fino a domenica`:"ultimo giorno della settimana"}</p>
-      <p class="hint" style="margin:2px 0 10px">Nel mese: rimangono ${E0(resto)} per le variabili su ${E0(V)}, ${daysLeft} giorni alla fine.</p></section>`}
-  else hero=`<section class="block wkhero"><small>${past?"Com'è andata con il budget":"Previsto per le variabili"}</small><b class="num ${past&&spent>V?"neg":""}">${past?E0(V-spent):E0(V)}</b>
-      <p class="hint" style="margin:6px 0 10px">${past?`${spent>V?"Sforate":"Avanzate"} di ${E0(Math.abs(V-spent))}: spese variabili ${E0(spent)} su ${E0(V)} previsti.`:`Circa ${E0(V/dim*7)} a settimana.`}</p></section>`;
+  if(!D)return head+`<section class="empty" style="padding-top:8px"><h1>Serve prima il budget.</h1><p>Il mese parte dalle spese previste nel budget ${sc===BFAM?"della famiglia":"di "+h(sc)}.</p><div class="btns"><button class="btn" data-nav="bud">Vai al budget</button></div></section>`;
+  const {by,rows,V,F,I,R_,Mg,vt,ft,qs,sV,sF,spent,plan,live,past,closed,lastD,t0,daysLeft}=D,left=plan-spent;
+  const hero=`<section class="block wkhero"><small>${past?"Spese del mese rispetto al budget":"Spese del mese finora"}</small><b class="num">${E0(spent)}<span class="wks"> su ${E0(plan)}</span></b>
+      <span class="bpb"><i class="${left<0?"ko":""}" style="width:${Math.min(100,plan>0?spent/plan*100:100)}%"></i></span>
+      <p class="hint" style="margin:6px 0 0">${left<0?`<span class="neg">Sforato di ${E0(-left)}</span>`:`${past?"Avanzati":"Restano"} ${E0(left)}`}${live&&left>0&&V-sV>0?` · per le variabili ${E0(V-sV)}, circa ${E0((V-sV)/daysLeft)} al giorno per ${daysLeft} giorni`:""}</p>
+      <p class="hint" style="margin:2px 0 10px">Fisse ${E0(sF)} su ${E0(F)} · variabili ${E0(sV)} su ${E0(V)}</p></section>`;
   const prev=by!==y?`<p class="banner" style="margin-top:8px">Prova: il ${y} non ha ancora un budget, uso quello del ${by} per il mese di ${MESI_L[mi].toLowerCase()}${past?", con le spese reali di allora":""}.</p>`:"";
-  const stale=live&&lastD<t0?`<p class="hint">Estratti importati fino al ${lastD?ddmm(lastD):"—"}: quello che spendi dopo segnalalo con «+ Spesa al volo», così il conto è giusto. Quando importi, l'app riconosce le spese già segnate e non le conta due volte.</p>`:"";
-  const wsec=`<section class="block"><h2>Settimana per settimana</h2>${wrows.map(o=>{const ref=past?o.plan:o.adj,over=o.used>ref*1.02&&o.st!=="next",sel=S.wkSel===o.i;
-      return `<button class="row wkrow ${o.st}" data-act="wk-sel" data-i="${o.i}" aria-expanded="${sel}"><span class="wkn">${o.i+1}</span>
-        <span style="min-width:0"><span class="dlt">${ddmm(o.w.a)} – ${ddmm(o.w.b)}${o.st==="now"?" · questa":""}</span>
-        <span class="hint" style="display:block;margin:0">${o.st==="next"?`Previsti ${E0(ref)}`:`Spesi ${E0(o.used)} su ${E0(ref)}`}${!past&&o.st!=="done"&&Math.abs(o.adj-o.plan)>=5?` <span class="${o.adj<o.plan?"neg":""}">(${o.adj<o.plan?"−":"+"}${E0(Math.abs(o.adj-o.plan))} di riporto)</span>`:""}</span>
-        ${o.st!=="next"?`<span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,ref>0?o.used/ref*100:100)}%"></i></span>`:""}</span>
-        <span class="amt num ${over?"neg":""}">${o.st==="next"?"":(o.used<=ref?"−":"+")+E0(Math.abs(ref-o.used)).replace(" €","")}</span></button>
-        ${sel?`<div class="wklist">${vt.filter(x=>x.t.d>=o.w.a&&x.t.d<=o.w.b).sort((a,b)=>a.t.d<b.t.d?1:-1).map(x=>x.q?quickRow(x.q,lastD):txRow(x.t,true)).join("")||`<p class="hint">Nessuna spesa variabile.</p>`}</div>`:""}`}).join("")}
-      <p class="hint" style="padding-bottom:8px">${past?"Per ogni settimana: spese variabili rispetto alla quota del mese (in proporzione ai giorni). A destra quanto è avanzato (−) o sforato (+).":"Quello che avanza o si sfora in una settimana si spalma sulle settimane rimaste. Tocca una settimana per vedere le spese."}</p></section>`;
+  const stale=!closed&&(live||lastD<ym+"-31")?`<p class="hint">Estratti importati fino al ${lastD?ddmm(lastD):"—"}: quello che spendi dopo segnalalo con «+ Spesa al volo». Quando importi, l'app riconosce le spese già segnate e non le conta due volte.</p>`:closed?`<p class="hint">Mese importato: i numeri sono quelli dei movimenti, come nel consuntivo del budget.</p>`:"";
   const vr=rows.filter(r=>grpOf(r)==="var"),vByK={};for(const o of vt)vByK[o.k]=(vByK[o.k]||0)+o.v;
   const vitems=vr.map(r=>({t:r.t,c:r.c,p:r.m[mi],a:r.src==="in:other"?0:(vByK[r.src]||0)}));const known=new Set(vr.map(r=>r.src));
   const oth=Object.entries(vByK).filter(([k])=>!known.has(k)).reduce((x,[,v])=>x+v,0);if(Math.abs(oth)>=1)vitems.push({t:"Fuori budget",p:0,a:oth});
-  const vsec=`<section class="block"><h2 style="display:flex;justify-content:space-between">Variabili per voce<span class="num">${E0(spent)} / ${E0(V)}</span></h2>${vitems.sort((a,b)=>b.p-a.p).map(x=>{const over=x.a>x.p*1.05&&x.a>5;
+  const vsec=`<section class="block"><h2 style="display:flex;justify-content:space-between">Variabili per voce<span class="num">${E0(sV)} / ${E0(V)}</span></h2>${vitems.sort((a,b)=>b.p-a.p).map(x=>{const over=x.a>x.p*1.05&&x.a>5;
       return `<div class="row" style="cursor:default">${x.c?catDot(x.c):`<i class="dot" style="background:var(--muted)"></i>`}<span style="min-width:0"><span class="dlt">${h(x.t)}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,x.p>0?x.a/x.p*100:100)}%"></i></span></span><span class="amt num ${over?"neg":""}" style="font-size:.9rem">${E0(x.a)} / ${E0(x.p)}</span></div>`}).join("")}<div style="height:6px"></div></section>`;
   const fr=rows.filter(r=>grpOf(r)==="fix"&&r.m[mi]),fByK={};for(const o of ft)fByK[o.k]=(fByK[o.k]||0)+o.v;
-  const fpaid=ft.reduce((x,o)=>x+o.v,0);
-  const fsec=`<section class="block"><h2 style="display:flex;justify-content:space-between">Fisse del mese<span class="num">${E0(fpaid)} / ${E0(F)}</span></h2>${fr.sort((a,b)=>b.m[mi]-a.m[mi]).map(r=>{const a=fByK[r.src]||(r.dl?(fByK["dl:"+r.dl]||0):0),ok=a>=r.m[mi]*0.9;
+  const fsec=`<section class="block"><h2 style="display:flex;justify-content:space-between">Fisse del mese<span class="num">${E0(sF)} / ${E0(F)}</span></h2>${fr.sort((a,b)=>b.m[mi]-a.m[mi]).map(r=>{const a=fByK[r.src]||(r.dl?(fByK["dl:"+r.dl]||0):0),ok=a>=r.m[mi]*0.9;
       return `<div class="row" style="cursor:default">${r.c?catDot(r.c):`<i class="dot" style="background:var(--muted)"></i>`}<span style="min-width:0"><span class="dlt">${h(r.t)}</span><span class="hint" style="display:block;margin:0">${ok?"Arrivata":a>0?`Arrivati ${E0(a)}`:past?"Non arrivata":"Da arrivare"}</span></span><span class="amt num" style="font-size:.9rem">${ok?"✓ ":""}${E0(r.m[mi])}</span></div>`}).join("")}<div style="height:6px"></div></section>`;
-  const sum=`<section class="block budsum"><div class="bs"><span>Entrate previste</span><b class="num">${E0(I)}</b></div><div class="bs m"><span>− Fisse</span><b class="num">${E0(F)}</b></div><div class="bs m"><span>− Da mettere da parte</span><b class="num">${E0(R_)}</b></div><div class="bs m"><span>− Variabili</span><b class="num">${E0(V)}</b></div><div class="bs tot"><span>= Margine del mese</span><b class="num" style="color:${Mg<0?"var(--danger)":"var(--ok)"}">${E0(Mg)}</b></div><p class="hint" style="margin:4px 0 10px">Il margine è il cuscinetto: se le variabili sforano, è da qui che si prende prima di toccare i risparmi.</p></section>`;
-  return head+prev+hero+stale+wsec+vsec+fsec+sum;
+  const qsec=qs.length?`<section class="block"><h2>Spese al volo del mese</h2><div class="wklist" style="padding-left:0">${qs.sort((a,b)=>a.d<b.d?1:-1).map(q=>quickRow(q,lastD)).join("")}</div><p class="hint" style="padding-bottom:8px">Quelle trovate nell'estratto non contano più: vale il movimento vero.</p></section>`:"";
+  const sum=`<section class="block budsum"><div class="bs"><span>Entrate previste</span><b class="num">${E0(I)}</b></div><div class="bs m"><span>− Fisse</span><b class="num">${E0(F)}</b></div><div class="bs m"><span>− Da mettere da parte</span><b class="num">${E0(R_)}</b></div><div class="bs m"><span>− Variabili</span><b class="num">${E0(V)}</b></div><div class="bs tot"><span>= Margine del mese</span><b class="num" style="color:${Mg<0?"var(--danger)":"var(--ok)"}">${E0(Mg)}</b></div><p class="hint" style="margin:4px 0 10px">Il margine è il cuscinetto: se le spese sforano, è da qui che si prende prima di toccare i risparmi.</p></section>`;
+  return head+prev+hero+stale+vsec+fsec+qsec+sum;
 }
+// budget per categoria nel periodo scelto (Riepilogo): somma dei mesi, dal budget dell'anno o da quello più vicino
+function perCatBud(sc){const B={},ys=new Set();for(const ym of perMonths()){const y=+ym.slice(0,4),by=wkBudYear(y,sc);if(by==null)continue;if(by!==y)ys.add(by);const mi=+ym.slice(5,7)-1;
+  for(const r of budRows(by,sc))if(r.k==="out"&&r.c&&r.s!=="casa"&&r.m[mi])B[r.c]=(B[r.c]||0)+r.m[mi]}B._ys=[...ys];return B}
+function catBudRow(c,v,BB){const b=BB[c]||0,over=b>0&&v>b*1.05;
+  return `<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span style="min-width:0">${h((CAT[c]||CAT.altro).n)}${b?`<span class="hint" style="display:block;margin:0">previsti ${eur(b)} · ${over?`<span class="neg">sforato di ${eur(v-b)}</span>`:`restano ${eur(b-v)}`}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v/b*100)}%"></i></span>`:""}</span><span class="amt num ${over?"neg":""}">${eur(v)}</span></button>`}
+function catBudNote(BB){return BB._ys&&BB._ys.length?`<p class="hint" style="padding-bottom:8px">Previsti presi dal budget ${BB._ys.join(", ")} (per questi mesi non c'è ancora un budget).</p>`:""}
 function budRowForm(id){
   const y=budYear(),sc=budScope(),r=id?budRows(y,sc).find(x=>x.id===id):{t:"",k:"out",s:"cat",c:"altro",m:Array(12).fill(0)};if(!r)return;
   S.sheet={budRow:id||"new"};
@@ -2260,9 +2241,10 @@ function vFamily(){
   // spese di casa per categoria, con i contanti prelevati e non attribuiti
   const tx=F.list,sp=spOf(tx).filter(t=>!paidByPatr(t)&&!F.toSav.has(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
-  const cats=Object.entries(byC).filter(([,v])=>v>0.004).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
+  const BB=perCatBud(isFam()?BFAM:S.page);for(const c in BB)if(c!=="_ys"&&!(c in byC))byC[c]=0;
+  const cats=Object.entries(byC).filter(([k,v])=>v>0.004||BB[k]>0).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
   const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
-    :`<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span>${h((CAT[c]||CAT.altro).n)}</span><span class="amt num">${eur(v)}</span></button>`;
+    :catBudRow(c,v,BB);
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...famFlows(ym,ym)})).filter(r=>r.inc||r.spese);
   return `${pageSeg()}
@@ -2279,7 +2261,7 @@ function vFamily(){
     ${top.map(catRow).join("")}
     ${rest.length?(S.catOpen?rest.map(catRow).join("")+`<button class="row" data-act="catmore"><i class="dot" style="background:transparent"></i><span class="link">Mostra meno</span><span></span></button>`
       :`<button class="row" data-act="catmore"><i class="dot" style="background:var(--line)"></i><span>Altre ${rest.length} categorie</span><span class="amt num">${eur(restV)}</span></button>`):""}
-  </section>`:""}
+  ${catBudNote(BB)}</section>`:""}
   ${rows.length>1?`<section class="block"><h2>Mese per mese</h2>
     <div class="mrow h"><span>in €</span><span>Entrate</span><span>Spese di casa</span><span>Avanzato</span></div>
     ${rows.slice().reverse().map(r=>{const av=r.inc-r.spese-r.restT-r.altri;return `<button class="mrow ${S.per.from===r.ym&&S.per.to===r.ym?"on":""}" data-act="gomonth" data-ym="${r.ym}"><span>${h(cap(monShort(r.ym)))} ${r.ym.slice(2,4)}</span><span class="num">${fmtNum(r.inc)}</span><span class="num">${fmtNum(r.spese)}</span><span class="num ${av>=0?"ok":"ko"}">${av>=0?"+":"−"}${fmtNum(Math.abs(av))}</span></button>`}).join("")}
@@ -3248,7 +3230,6 @@ document.addEventListener("click",async e=>{
   else if(act==="q-sc"){S.sheet.sc=el.dataset.p;document.querySelectorAll('[data-act="q-sc"]').forEach(b=>b.setAttribute("aria-pressed",String(b===el)))}
   else if(act==="wk-open"){S.budScope=el.dataset.p;S.wkYm=null;S.wkSel=null;S.view="wk";render();window.scrollTo(0,0)}
   else if(act==="wk-m"){S.wkYm=shiftYM(wkYm(),+el.dataset.d);S.wkSel=null;render()}
-  else if(act==="wk-sel"){const i=+el.dataset.i;S.wkSel=S.wkSel===i?null:i;render()}
   else if(act==="bud-hist"){const hh=S.sheet&&S.sheet.hist;if(!hh)return;for(let i=0;i<12;i++)$("#bm"+i).value=hh[i]?fmtNum(hh[i]):"";$("#btot").value=fmtNum(sumArr(hh));toast("Importi distribuiti come negli ultimi 12 mesi: salva per tenerli")}
   else if(act==="bud-eq"){const v=num($("#btot").value||"");if(isNaN(v)){toast("Scrivi il totale dell'anno.");return}const m=Math.round(v/12*100)/100;for(let i=0;i<12;i++)$("#bm"+i).value=fmtNum(i<11?m:Math.round((v-m*11)*100)/100)}
   else if(act==="bud-propose") budDoPropose();
