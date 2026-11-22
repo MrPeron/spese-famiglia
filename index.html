@@ -376,7 +376,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "45 · 22/11/2026";
+const APP_VERSION = "46 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1428,7 +1428,8 @@ async function delItems(ids){
 }
 // ---------- Calendario: griglia del mese con scadenze ed eventi di famiglia (compleanni, feste, visite…) ----------
 const EV_COL="#7F77DD",EV_HI="#D4537E",DL_COL="#E6A644";
-function evs(){return Object.entries(S.evs||{}).map(([id,x])=>({id,...x}))}
+// eventi; due identici (stesso titolo, date, ora: es. salvati due volte) si mostrano una volta sola
+function evs(){const seen=new Set();return Object.entries(S.evs||{}).map(([id,x])=>({id,...x})).sort((a,b)=>a.id.localeCompare(b.id)).filter(e=>{const k=[norm(e.t),e.d,e.d2||"",e.time||"",e.rep||""].join("|");if(seen.has(k))return false;seen.add(k);return true})}
 function spanDays(a,b){return Math.round((Date.parse(b)-Date.parse(a))/86400000)}
 // inizio di ogni ripetizione di un evento che tocca l'intervallo [from,to]
 function evOcc(e,from,to){
@@ -1471,7 +1472,7 @@ function vCalendar(){
   const dayList=sel?`<section class="block"><h2 style="display:flex;justify-content:space-between;align-items:center">${h(new Date(sel+"T12:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"}))}<button class="link" data-act="cal-add" data-d="${sel}" style="font-size:.9rem">+ Aggiungi</button></h2>
       ${dayItems(sel).map(itemRow).join("")||`<p class="hint" style="padding-bottom:8px">Niente in questo giorno.</p>`}<div style="height:4px"></div></section>`:"";
   // in evidenza: eventi importanti dei prossimi 90 giorni
-  const to=shiftDay(t,90),hiList=evs().filter(e=>e.hi).flatMap(e=>evOcc(e,t,to).map(s=>({k:"ev",x:e,s}))).sort((a,b)=>a.s.localeCompare(b.s)).slice(0,5);
+  const to=shiftDay(t,90),inSel=new Set(sel?dayItems(sel).filter(i=>i.k==="ev").map(i=>i.x.id):[]),hiList=evs().filter(e=>e.hi&&!inSel.has(e.id)).flatMap(e=>evOcc(e,t,to).map(s=>({k:"ev",x:e,s}))).sort((a,b)=>a.s.localeCompare(b.s)).slice(0,5);
   return `${seg}
   <div class="calhead"><button class="iconbtn" data-act="cal-prev" aria-label="Mese precedente">‹</button><b>${h(title)}</b><button class="iconbtn" data-act="cal-next" aria-label="Mese successivo">›</button></div>
   <div class="cgridm">${["L","M","M","G","V","S","D"].map(x=>`<span class="cwd">${x}</span>`).join("")}${cells}</div>
