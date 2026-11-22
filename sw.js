@@ -2,8 +2,8 @@
 // La pagina e i file del sito: prima la rete (così gli aggiornamenti arrivano subito), se manca si usa la copia salvata.
 // Librerie, caratteri e loghi delle tessere: la copia salvata, aggiornata in sottofondo.
 // I dati (Firestore) e il login non passano da qui: li conserva Firebase.
-const CACHE = "casa-v2";
-const SHELL = ["./", "index.html", "config.js", "manifest.json", "icon-32.png", "icon-180.png", "icon-192.png", "icon-512.png"];
+const CACHE = "casa-v3";
+const SHELL = ["./", "index.html", "config.js", "manifest.json", "favicon.ico", "icon-32.png", "icon-96.png", "icon-180.png", "icon-192.png", "icon-512.png"];
 const CDN = /^https:\/\/(www\.gstatic\.com\/firebasejs\/|cdnjs\.cloudflare\.com\/|cdn\.jsdelivr\.net\/npm\/@zxing\/|fonts\.googleapis\.com\/|fonts\.gstatic\.com\/)/;
 
 self.addEventListener("install", e => {
