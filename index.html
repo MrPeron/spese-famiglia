@@ -498,7 +498,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "55 · 22/11/2026";
+const APP_VERSION = "56 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1322,15 +1322,15 @@ function vCards(){
       :`<p class="hint" style="padding-bottom:10px">Il codice fiscale di ognuno, con il codice a barre della tessera sanitaria: si mostra in farmacia e si copia al volo nei moduli.</p>`}<div style="height:4px"></div></section>`;
   const all=cards().filter(c=>c.k!=="cf"),own=[...new Set(all.map(c=>c.pb).filter(Boolean))];
   const f=S.cardPb&&own.includes(S.cardPb)?S.cardPb:"";
-  const list=all.filter(c=>!f||c.pb===f).sort((a,b)=>(b.u||"").localeCompare(a.u||"")||(a.n||"").localeCompare(b.n||""));
+  const list=all.filter(c=>!f||c.pb===f).sort((a,b)=>(a.n||"").localeCompare(b.n||"","it",{sensitivity:"base",numeric:true}));
   if(!all.length) return `<section class="empty"><h1>Le tessere fedeltà, sempre in tasca.</h1>
     <p>Aggiungi le tessere di tutta la famiglia: alla cassa apri quella giusta e mostri il codice a barre o il QR. Funziona anche senza rete.</p>
     <div class="btns"><button class="btn" data-act="card-new">Aggiungi una tessera</button></div></section>`+cfBlock;
   return `<div class="btns" style="margin:10px 0 4px;align-items:center;justify-content:space-between">
       ${own.length>1?`<div class="chips">${["",...own].map(p=>`<button class="chip" data-act="card-pb" data-p="${h(p)}" aria-pressed="${p===f}">${h(p||"Tutte")}</button>`).join("")}</div>`:"<span></span>"}
       <button class="btn" data-act="card-new" style="padding:9px 14px">+ Aggiungi</button></div>
-    <div class="wallet${list.length>2?" stack":""}">${list.slice().reverse().map(walletCard).join("")}</div>
-    ${list.length>2?`<p class="hint" style="text-align:center;margin:8px 0 0">La più usata è davanti; tocca una carta per aprirla.</p>`:""}`+cfBlock;
+    <div class="wallet${list.length>2?" stack":""}">${list.map(walletCard).join("")}</div>
+    ${list.length>2?`<p class="hint" style="text-align:center;margin:8px 0 0">In ordine alfabetico: tocca una carta per aprirla.</p>`:""}`+cfBlock;
 }
 // Codice fiscale: formato, carattere di controllo (lettere per omocodia ammesse) e scrittura a gruppi
 const RE_CF=/^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-EHLMPR-T][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/;
