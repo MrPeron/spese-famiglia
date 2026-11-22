@@ -447,6 +447,9 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .row.brow{grid-template-columns:12px minmax(0,1fr) auto}
 .bpb{display:block;height:4px;border-radius:2px;background:var(--sunk);overflow:hidden;margin-top:4px}
 .bpb i{display:block;height:100%;background:var(--ok)}.bpb i.ko{background:var(--danger)}
+.bsrc{max-height:420px}.bsrc>div{align-items:flex-start}
+.bdates{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:4px;font-size:.78rem;color:var(--muted)}
+.bdates>span{background:var(--sunk);border-radius:6px;padding:1px 6px;font-variant-numeric:tabular-nums}
 .budin{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .budin label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted);font-weight:600}
 .budgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
@@ -503,7 +506,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "59 · 22/11/2026";
+const APP_VERSION = "60 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -2015,13 +2018,18 @@ function budRowForm(id){
 }
 // da dove viene la cifra proposta: i movimenti degli ultimi 12 mesi che finiscono in questa voce, raggruppati per descrizione
 function budSources(sc,r){
-  const last=lastDataYm();if(!last)return "";const from=shiftYM(last,-11),C=budCtx(sc),own=new Set(budRowsRaw(budYear(),sc).map(x=>x.src)),g={};
+  const last=lastDataYm();if(!last)return "";const from=shiftYM(last,-11),C=budCtx(sc),own=new Set(budRowsRaw(budYear(),sc).map(x=>x.src)),g={},mo=Array(12).fill(0);
   for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>last)continue;const k=budKey(t,C);if(!k)continue;
     const hit=r.src==="in:other"?(k[0].startsWith("in:")&&!k[0].startsWith("in:vers:")&&k[0]!=="in:casa"&&!own.has(k[0])):(k[0]===r.src||(r.dl&&k[0].startsWith("dl:")&&((dls().find(x=>x.id===r.dl)||{}).paid||[]).some(p=>p.tx===t.id)));if(!hit)continue;
-    const d=(t.n||t.m||t.x||"").trim().slice(0,48),x=g[d]||(g[d]={v:0,c:0});x.v+=k[1];x.c++}
+    const d=(t.n||t.m||t.x||"").trim().slice(0,48),x=g[d]||(g[d]={v:0,c:0,ds:[]});x.v+=k[1];x.c++;x.ds.push([t.d,k[1]]);mo[+ym.slice(5,7)-1]+=k[1]}
   const l=Object.entries(g).sort((a,b)=>Math.abs(b[1].v)-Math.abs(a[1].v));if(!l.length)return "";
+  if(S.sheet)S.sheet.hist=mo.map(v=>Math.round(v*100)/100);
+  const dl=x=>{const a=x.ds.sort((p,q)=>p[0].localeCompare(q[0]));const show=a.length>14?a.slice(-14):a;
+    return `<span class="bdates">${a.length>14?`<span class="hint" style="margin:0">… </span>`:""}${show.map(([d,v])=>`<span title="${eur(v)}">${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(2,4)}${x.c>1&&a.length<=6?` · ${eur(v)}`:""}</span>`).join("")}</span>`};
   return `<details class="field"><summary class="link">Da dove viene (ultimi 12 mesi, ${l.length} ${l.length===1?"descrizione":"descrizioni"})</summary>
-    <div class="rules" style="margin-top:8px">${l.slice(0,25).map(([d,x])=>`<div><span>${h(d)} <span class="hint" style="margin:0">× ${x.c}</span></span><span class="num">${eur(x.v)}</span></div>`).join("")}</div>
+    <div class="rules bsrc" style="margin-top:8px">${l.slice(0,25).map(([d,x])=>`<div><span>${h(d)} <span class="hint" style="margin:0">× ${x.c}</span>${dl(x)}</span><span class="num">${eur(x.v)}</span></div>`).join("")}</div>
+    <p class="hint" style="margin-top:8px">Per mese, ultimi 12 mesi: ${MESI.map((m,i)=>mo[i]?`${m} ${E0(mo[i])}`:"").filter(Boolean).join(" · ")||"—"}</p>
+    <button class="btn ghost" data-act="bud-hist" style="padding:8px 12px">Metti gli importi nei mesi come l'anno scorso</button>
     <p class="hint">Se qualcosa non c'entra (un rimborso, un giroconto da un tuo conto), correggi il tipo di quel movimento in Movimenti e poi rifai la proposta.</p></details>`;
 }
 async function budSaveRow(){
@@ -3098,6 +3106,7 @@ document.addEventListener("click",async e=>{
   else if(act==="bud-add") budRowForm("");
   else if(act==="bud-save") budSaveRow();
   else if(act==="bud-del"){const id=S.sheet&&S.sheet.budRow;if(!id||!confirm("Eliminare questa voce del budget?"))return;budWrite(budYear(),budScope(),{rows:{[id]:null}},"Voce eliminata")}
+  else if(act==="bud-hist"){const hh=S.sheet&&S.sheet.hist;if(!hh)return;for(let i=0;i<12;i++)$("#bm"+i).value=hh[i]?fmtNum(hh[i]):"";$("#btot").value=fmtNum(sumArr(hh));toast("Importi distribuiti come negli ultimi 12 mesi: salva per tenerli")}
   else if(act==="bud-eq"){const v=num($("#btot").value||"");if(isNaN(v)){toast("Scrivi il totale dell'anno.");return}const m=Math.round(v/12*100)/100;for(let i=0;i<12;i++)$("#bm"+i).value=fmtNum(i<11?m:Math.round((v-m*11)*100)/100)}
   else if(act==="bud-propose") budDoPropose();
   else if(act==="bud-xlsx") budXlsx();
