@@ -515,7 +515,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "64 · 23/11/2026";
+const APP_VERSION = "65 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1268,25 +1268,10 @@ function casaStrip(){
 }
 function vCasa(){
   const svg=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-  let spese="";
-  if(!S.all.length) spese=`<div class="cs-lab">${svg('<path d="M3 7h18v12H3z"/><path d="M16 13h2"/><path d="M3 7l3-3h12l3 3"/>')}Spese</div><p class="cs-sub">Nessun movimento ancora: tocca qui per importare un estratto.</p>`;
-  else{
-    // il mese mostrato è l'ultimo con movimenti importati, così a inizio mese non compare uno zero
-    const bank=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,""),ym=bank?ymOf(bank):ymOf(today());
-    const mese=new Date(+ym.slice(0,4),+ym.slice(5,7)-1,1).toLocaleDateString("it-IT",{month:"long"});
-    const keep=S.page;let F=null,P=null;
-    try{S.page=famName();F=pageCorrAccs().size?famFlows(ym,ym):null;P=patrCalc(ym,ymOf(today()))}finally{S.page=keep}
-    const v=F?F.spese:0,[a,b]=eurSplit(v),pct=F&&F.inc>0?Math.min(100,Math.round(v/F.inc*100)):0;
-    spese=`<div class="cs-lab">${svg('<path d="M3 7h18v12H3z"/><path d="M16 13h2"/><path d="M3 7l3-3h12l3 3"/>')}Spese di casa · ${h(mese)}</div>
-      <div class="cs-big num">${h(a)}<small>${h(b)} €</small></div>
-      ${F&&F.inc>0?`<div class="cs-bar" title="${pct}% di quanto è entrato"><i style="width:${pct}%"></i></div>`:""}
-      <div class="cs-sub">${[F&&F.inc>0?"su "+eur(F.inc)+" entrati":"",P&&P.any&&!P.miss.length?"risparmi "+eur(P.s1):"",bank?"movimenti al "+ddmm(bank):""].filter(Boolean).join(" · ")}</div>`;
-  }
   const cs=cards().filter(c=>c.k!=="cf"),last=cs.slice().sort((a,b)=>(b.u||"").localeCompare(a.u||""))[0];
   const L=curList(),li=items(L.id),todo=li.filter(x=>!x.done).length,done=li.length-todo;
   const tile=(nav,icon,col,t,sub,extra)=>`<button class="tile" data-nav="${nav}"><span style="color:${col}">${icon}</span><b>${t}</b><span>${sub}</span>${extra||""}</button>`;
   return `${casaStrip()}
-  <button class="block" data-nav="spese" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">${spese}</button>
   ${casaMonth()}
   <div class="tiles">
     ${tile("tessere",svg('<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M6 15h4"/>'),"#7F77DD","Tessere",last?"Ultima: "+h(last.n):cs.length?cs.length+" salvate":"Aggiungi la prima")}
