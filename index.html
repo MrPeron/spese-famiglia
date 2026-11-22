@@ -70,7 +70,7 @@ nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:re
 nav.tabs button{border:0;background:none;padding:10px 4px 9px;cursor:pointer;color:var(--muted);font-size:.78rem;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
 nav.tabs button svg{width:22px;height:22px}
 nav.tabs button[aria-current="page"]{color:var(--primary)}
-nav.sub{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:2px 0 6px}
+nav.sub{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:2px 0 6px}
 nav.sub button{min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:7px 0;font-weight:600;font-size:.76rem;letter-spacing:-.01em;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 nav.sub button[aria-current="page"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
 .casa-date{color:var(--muted);font-size:.95rem;padding-top:10px}
@@ -428,6 +428,24 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .wcard::after{content:"";position:absolute;right:-40px;bottom:-60px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.08)}
 .wcard.photo::after{display:none}
 .colsw{display:flex;gap:8px;flex-wrap:wrap}
+.budhero{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}.budhero b{font-size:1.15rem;white-space:nowrap}
+.budm{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:6px -16px 0;padding:2px 16px 4px}
+.budm::-webkit-scrollbar{display:none}
+.budm .chip{flex:0 0 auto}
+.budbars{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px;align-items:end;margin:6px 0 4px}
+.budbars button{background:none;border:0;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted)}
+.budbars .bb{height:70px;width:100%;display:flex;align-items:flex-end;justify-content:center;background:var(--sunk);border-radius:6px;overflow:hidden}
+.budbars .bb i{display:block;width:100%;background:var(--ok);border-radius:6px 6px 0 0}
+.budbars .bb i.neg{background:var(--danger)}
+.budbars button.on .bb{box-shadow:0 0 0 2px var(--ink) inset}
+.budbars small{font-size:.72rem;font-weight:700}
+.row.brow{grid-template-columns:12px minmax(0,1fr) auto}
+.bpb{display:block;height:4px;border-radius:2px;background:var(--sunk);overflow:hidden;margin-top:4px}
+.bpb i{display:block;height:100%;background:var(--ok)}.bpb i.ko{background:var(--danger)}
+.budin{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.budin label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted);font-weight:600}
+.budgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.budgrid div{background:var(--sunk);border-radius:10px;padding:8px 10px}.budgrid span{display:block;font-size:.78rem;color:var(--muted)}
 .colfree{position:relative;width:30px;height:30px;border-radius:50%;cursor:pointer;box-shadow:0 0 0 1px var(--line);overflow:hidden}
 .colfree.on{box-shadow:0 0 0 2px var(--ink)}
 .colfree input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
@@ -480,7 +498,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "53 · 22/11/2026";
+const APP_VERSION = "54 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -611,7 +629,13 @@ function perLabel(){
 function perIn(){return S.per.from===S.per.to?"a "+monthName(S.per.from):"in "+perLabel()}
 
 // Pagine: Famiglia = tutti i conti; Alessandro / Federica = i conti intestati a loro (e i contanti che hanno registrato)
-function pages(){return [...payers(),"Famiglia","Risparmi"]}
+// Chi amministra l'app (il primo di "chi sostiene le spese", di solito Alessandro) vede tutto e tutte le impostazioni;
+// gli altri vedono solo la propria pagina personale, Famiglia e Risparmi, e le impostazioni del proprio dispositivo.
+// Nota: è un filtro dell'app, non dei permessi di Firestore.
+function isAdmin(){const me=meName();return !me||me===(S.settings.admin||payers()[0])}
+// conti che chi non amministra può vedere: i propri, quelli cointestati e i risparmi
+function visConti(){return isAdmin()?contoList():contoList().filter(([,v])=>v.pb===meName()||v.pb===JOINT)}
+function pages(){return isAdmin()?[...payers(),"Famiglia","Risparmi"]:[meName(),"Famiglia","Risparmi"]}
 function isRisp(){return S.page==="Risparmi"}
 function isFam(){return !payers().includes(S.page)}
 // Famiglia = conti cointestati correnti (Widiba); Risparmi = conti del patrimonio (BBVA); persone = conti intestati a loro
@@ -1194,9 +1218,9 @@ function vCheck(){
   </section>`;
 }
 // ---------- Casa: schermata iniziale con il colpo d'occhio sulle spese e le altre sezioni ----------
-const SPESE_VIEWS=["home","movs","cash","check","imp"];
+const SPESE_VIEWS=["home","movs","cash","check","imp","bud"];
 function spSub(){
-  return `<nav class="sub" aria-label="Spese">${[["home","Riepilogo"],["movs","Movimenti"],["cash","Contanti"],["check","Verifiche"],["imp","Importa"]].map(([k,l])=>`<button data-nav="${k}" aria-current="${S.view===k?"page":"false"}">${l}</button>`).join("")}</nav>`;
+  return `<nav class="sub" aria-label="Spese">${[["home","Riepilogo"],["movs","Movimenti"],["cash","Contanti"],["check","Verifiche"],["imp","Importa"],["bud","Budget"]].map(([k,l])=>`<button data-nav="${k}" aria-current="${S.view===k?"page":"false"}">${l}</button>`).join("")}</nav>`;
 }
 function meName(){return payers().find(p=>S.uid&&norm(S.uid).includes(norm(p)))||""}
 // promemoria mensile per importare gli estratti: creato una volta sola per la famiglia
@@ -1817,6 +1841,135 @@ function casaAgenda(){
     if(it.k==="dl"){const cls=n<0?"late":n<=(x.pre??7)?"soon":"";return `<button class="kv kvb" data-act="dl-open" data-id="${h(x.id)}"><span>${h(x.t)}</span><b class="num dlk ${cls}">${ddmm(it.s)}${x.a?" · "+eur(x.a):""}</b></button>`}
     return `<button class="kv kvb" data-act="ev-open" data-id="${h(x.id)}" data-s="${h(it.s)}"><span>${x.hi?`<i class="dot" style="background:${EV_HI};margin-right:6px"></i>`:""}${h(x.t)}</span><b class="num"${x.hi?` style="color:${EV_HI}"`:""}>${n===0?"oggi":n===1?"domani":ddmm(it.s)}${x.time?" · "+h(x.time):""}</b></button>`}).join("");
 }
+// ---------- Budget annuale mensilizzato (es. 2027): voci × 12 mesi, proposta dai dati reali, confronto con il consuntivo ----------
+const MESI=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
+const BSEC={in:"Entrate",cat:"Spese per categoria",dl:"Scadenze",extra:"Straordinarie e contanti"};
+function budYear(){return S.budYear||(+today().slice(5,7)>=10?+today().slice(0,4)+1:+today().slice(0,4))}
+function budDoc(y){return (S.bud||{})[String(y||budYear())]||{}}
+function budRowsRaw(y){return Object.entries(budDoc(y).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
+// chi non amministra vede le entrate in una riga sola, senza il dettaglio per persona
+function budRows(y){const l=budRowsRaw(y);if(isAdmin())return l;const ins=l.filter(r=>r.k==="in");if(ins.length<2)return l;
+  return [{id:"_in",t:"Entrate della famiglia",k:"in",srcs:ins.map(r=>r.src).filter(Boolean),m:MESI.map((_,i)=>ins.reduce((x,r)=>x+r.m[i],0))},...l.filter(r=>r.k!=="in")]}
+function rowAct(act,r){if(r.srcs){const a=Array(12).fill(0);let any=false;for(const s of r.srcs)if(act[s]){any=true;act[s].forEach((v,i)=>a[i]+=v)}return any?a:null}return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
+function rowSec(r){return r.k==="in"?"in":(r.s||"cat")}
+function sumArr(a){return a.reduce((x,v)=>x+(+v||0),0)}
+// ultimo mese con movimenti importati (quindi con consuntivo affidabile)
+function lastDataYm(){const b=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,"");return b?ymOf(b):""}
+function dlPaidIds(){const s=new Set();for(const x of dls())for(const p of x.paid||[])if(p.tx)s.add(p.tx);return s}
+// classificazione comune a proposta e consuntivo: a quale voce va un movimento
+function budKey(t,paidIds){
+  if(t.k==="prelievo")return "extra:contanti";
+  if(t.k==="entrata"){if(isPatr(t))return "";const c=conti()[t.acc];return "in:"+(c&&payers().includes(c.pb)?c.pb:"casa")}
+  if(t.k!=="spesa"||t.s===CASH||isPatrCost(t)||paidByPatr(t)||isPatr(t))return "";
+  // soldi spostati verso i risparmi (anche se letti come spesa) non sono spese del budget
+  if(pCounter(t,new Set(contoList().filter(([k,v])=>ruolo(k)==="patrimonio"&&v.t!=="carta").map(([k])=>k))))return "";
+  if(paidIds.has(t.id))return "dl:"+t.id;
+  if(spType(t)==="straordinaria")return "extra:stra";
+  return "cat:"+(t.c||"altro");
+}
+function budPropose(y){
+  const last=lastDataYm(),cur=ymOf(today());if(!last)return null;
+  const to=last<cur?last:shiftYM(cur,-1),first=ymOf(S.all.filter(t=>t.s!==CASH).reduce((m,t)=>!m||t.d<m?t.d:m,""));
+  let from=shiftYM(to,-11);if(first>from)from=first;let n=0;for(let ym=from;ym<=to;ym=shiftYM(ym,1))n++;if(n<1)return null;
+  const paid=dlPaidIds(),acc={};
+  for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>to)continue;const k=budKey(t,paid);if(!k||k.startsWith("dl:"))continue;acc[k]=(acc[k]||0)+Math.abs(t.a)/n}
+  const r10=v=>Math.round(v/10)*10,eq=v=>Array(12).fill(r10(v)),rows={};
+  for(const p of payers())if(acc["in:"+p]>5)rows["in-"+hash(p)]={t:"Entrate "+p,k:"in",src:"in:"+p,m:eq(acc["in:"+p])};
+  if(acc["in:casa"]>5)rows["in-casa"]={t:"Altre entrate (conto di casa)",k:"in",src:"in:casa",m:eq(acc["in:casa"])};
+  for(const [id,nm] of CATS)if(acc["cat:"+id]>5)rows["c-"+id]={t:nm,k:"out",s:"cat",c:id,src:"cat:"+id,m:eq(acc["cat:"+id])};
+  if(acc["extra:stra"]>5)rows["x-stra"]={t:"Spese straordinarie (riserva)",k:"out",s:"extra",src:"extra:stra",m:eq(acc["extra:stra"])};
+  if(acc["extra:contanti"]>5)rows["x-cash"]={t:"Contanti (prelievi)",k:"out",s:"extra",src:"extra:contanti",m:eq(acc["extra:contanti"])};
+  // scadenze con importo: nel mese in cui cadono
+  const y0=y+"-01-01",y1=y+"-12-31";
+  for(const x of dls()){if(!x.a||x.done&&!x.rep)continue;const m=Array(12).fill(0);for(const d of occurrences(x,y1))if(d>=y0)m[+d.slice(5,7)-1]+=x.a;if(sumArr(m)>0)rows["d-"+x.id]={t:x.t,k:"out",s:"dl",c:x.c||"banca",dl:x.id,src:"dl:"+x.id,m}}
+  return {rows,n,from,to};
+}
+// consuntivo per voce e mese (solo mesi già importati)
+function budActual(y){
+  const last=lastDataYm(),out={},paid=dlPaidIds(),dlOf={};
+  for(const x of dls())for(const p of x.paid||[])if(p.tx)dlOf[p.tx]=x.id;
+  for(const t of S.all){if(t.d.slice(0,4)!==String(y))continue;const ym=ymOf(t.d);if(ym>last)continue;let k=budKey(t,paid);if(!k)continue;if(k.startsWith("dl:"))k="dl:"+dlOf[t.id];
+    const a=out[k]||(out[k]=Array(12).fill(0));a[+ym.slice(5,7)-1]+=Math.abs(t.a)}
+  return out;
+}
+function budMonthsDone(y){const last=lastDataYm();if(!last||last.slice(0,4)<String(y))return 0;if(last.slice(0,4)>String(y))return 12;return +last.slice(5,7)}
+function vBudget(){
+  const y=budYear(),rows=budRows(y),adm=isAdmin(),M=S.budM??"",sel=M===""?null:+M;
+  const head=`<div class="calhead"><button class="iconbtn" data-act="bud-y" data-d="-1" aria-label="Anno precedente">‹</button><b>Budget ${y}</b><button class="iconbtn" data-act="bud-y" data-d="1" aria-label="Anno successivo">›</button></div>`;
+  if(!rows.length) return head+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y}, mese per mese.</h1>
+    <p>Entrate, spese per categoria, scadenze nel mese in cui cadono e risparmio atteso. ${adm?"La proposta parte dalle medie dei movimenti importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
+    ${adm?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}</section>`;
+  const act=budActual(y),done=budMonthsDone(y),val=r=>sel==null?sumArr(r.m):r.m[sel];
+  const actOf=r=>{const a=rowAct(act,r);if(!a)return null;if(sel==null)return done?sumArr(a.slice(0,done)):null;return sel<done?a[sel]:null};
+  const tot=k=>rows.filter(r=>r.k===k).reduce((x,r)=>x+val(r),0),I=tot("in"),O=tot("out");
+  const sav=Array.from({length:12},(_,i)=>rows.reduce((x,r)=>x+(r.k==="in"?1:-1)*r.m[i],0)),mx=Math.max(1,...sav.map(Math.abs));
+  const chips=`<div class="chips budm">${[["","Anno"],...MESI.map((m,i)=>[String(i),m])].map(([v,l])=>`<button class="chip" data-act="bud-m" data-m="${v}" aria-pressed="${String(M)===v}">${l}</button>`).join("")}</div>`;
+  const bars=`<div class="budbars">${sav.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: risparmio ${eur(v)}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
+  const row=r=>{const v=val(r),a=actOf(r),over=a!=null&&(r.k==="in"?a<v*0.95:a>v*1.05);
+    return `<button class="row brow" data-act="bud-row" data-id="${h(r.id)}">${r.c?catDot(r.c):`<i class="dot" style="background:${r.k==="in"?"var(--ok)":"var(--muted)"}"></i>`}
+      <span style="min-width:0"><span class="dlt">${h(r.t)}</span>${a!=null?`<span class="hint" style="display:block;margin:0">Reale ${eur(a)}${v?` · ${Math.round(a/v*100)}%`:""}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v?a/v*100:0)}%"></i></span>`:""}</span>
+      <span class="amt num">${eur(v)}</span></button>`};
+  const sec=k=>{const l=rows.filter(r=>rowSec(r)===k).sort((a,b)=>sumArr(b.m)-sumArr(a.m));if(!l.length)return "";const t=l.reduce((x,r)=>x+val(r),0);
+    return `<section class="block"><h2 style="display:flex;justify-content:space-between">${BSEC[k]}<span class="num">${eur(t)}</span></h2>${l.map(row).join("")}<div style="height:4px"></div></section>`};
+  return `${head}${chips}
+    <div class="hero3 budhero"><div><span>Entrate</span><b class="num">${E0(I)}</b></div><div><span>Uscite</span><b class="num">${E0(O)}</b></div><div><span>Risparmio</span><b class="num" style="color:${I-O<0?"var(--danger)":"var(--ok)"}">${E0(I-O)}</b></div></div>
+    <section class="block"><h2>Risparmio mese per mese</h2>${bars}<p class="hint" style="padding-bottom:8px">${done?`Consuntivo disponibile fino a ${MESI[done-1].toLowerCase()} ${y}: sotto ogni voce c'è il reale.`:`Il confronto con il reale compare man mano che importi i mesi del ${y}.`}</p></section>
+    ${sec("in")}${sec("cat")}${sec("dl")}${sec("extra")}
+    <div class="btns" style="margin-top:14px">${adm?`<button class="btn ghost" data-act="bud-add">+ Voce</button>`:""}<button class="btn ghost" data-act="bud-xlsx">Scarica Excel</button>${adm?`<button class="btn ghost" data-act="bud-propose">Rifai la proposta</button>`:""}</div>
+    <p class="hint">Le scadenze del Calendario con importo entrano nel mese in cui cadono; le spese per categoria non comprendono i pagamenti già abbinati a una scadenza, ma controlla che una stessa spesa non compaia due volte (es. un'assicurazione sia come scadenza sia nella sua categoria).</p>`;
+}
+function E0(v){return fmtNum(Math.round(v)).replace(/,00$/,"")+" €"}
+function budRowForm(id){
+  const y=budYear(),r=id?budRows(y).find(x=>x.id===id):{t:"",k:"out",s:"cat",c:"altro",m:Array(12).fill(0)};if(!r)return;
+  const adm=isAdmin();S.sheet={budRow:id||"new"};
+  const opt=(v,l,sel)=>`<option value="${h(v)}"${v===sel?" selected":""}>${h(l)}</option>`;
+  if(!adm){openSheet(`<h3>${h(r.t)}</h3><div class="sub">${BSEC[rowSec(r)]} · totale ${eur(sumArr(r.m))}</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);return}
+  openSheet(`<h3>${id?"Modifica voce":"Nuova voce"}</h3>
+    <div class="field"><label for="bt">Voce</label><input id="bt" value="${h(r.t)}" placeholder="Vacanze estive" autocomplete="off"></div>
+    <div class="two"><div class="field" style="margin-top:0"><label for="bk">Sezione</label><select id="bk">${opt("in","Entrata",r.k==="in"?"in":"")}${opt("cat","Spesa per categoria",r.k==="out"?rowSec(r):"")}${opt("dl","Scadenza",r.k==="out"?rowSec(r):"")}${opt("extra","Straordinaria / contanti",r.k==="out"?rowSec(r):"")}</select></div>
+      <div class="field" style="margin-top:0"><label for="bc">Categoria</label><select id="bc">${CATS.map(([k,n])=>opt(k,n,r.c||"altro")).join("")}</select></div></div>
+    <div class="field"><span class="lab">Importi per mese</span>
+      <div class="two" style="margin-bottom:8px"><input id="btot" inputmode="decimal" placeholder="Totale anno" value="${sumArr(r.m)?fmtNum(sumArr(r.m)):""}"><button class="btn ghost" data-act="bud-eq">Dividi in 12</button></div>
+      <div class="budin">${r.m.map((v,i)=>`<label><span>${MESI[i]}</span><input id="bm${i}" inputmode="decimal" value="${v?fmtNum(v):""}" placeholder="0"></label>`).join("")}</div>
+      <p class="hint">Scrivi il totale e tocca «Dividi in 12», oppure metti gli importi nei mesi giusti (es. tredicesima a dicembre, vacanze ad agosto).</p></div>
+    <div class="btns"><button class="btn" data-act="bud-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="bud-del">Elimina</button>`:""}</div>`);
+}
+async function budSaveRow(){
+  const sh=S.sheet;if(!sh||!sh.budRow)return;const y=budYear();
+  const t=$("#bt").value.trim();if(!t){toast("Scrivi il nome della voce.");return}
+  const m=MESI.map((_,i)=>{const v=num($("#bm"+i).value||"0");return isNaN(v)?0:Math.round(v*100)/100});
+  const sk=$("#bk").value,id=sh.budRow==="new"?uid():sh.budRow,old=budRowsRaw(y).find(x=>x.id===id)||{};
+  const row={...old,t,k:sk==="in"?"in":"out",s:sk==="in"?"":sk,c:sk==="in"?"":$("#bc").value,m};delete row.id;
+  await budWrite(y,{rows:{[id]:row}},"Voce salvata");
+}
+async function budWrite(y,patch,msg){
+  const cur=budDoc(y),rows={...(cur.rows||{})};for(const [k,v] of Object.entries(patch.rows||{}))if(v===null)delete rows[k];else rows[k]=v;
+  S.bud={...(S.bud||{}),[String(y)]:{...cur,rows}};closeSheet();render();if(msg)toast(msg);
+  const fsRows={};for(const [k,v] of Object.entries(patch.rows||{}))fsRows[k]=v===null?deleteField():v;
+  try{await setDoc(doc(S.db,"budget",String(y)),{rows:fsRows,upd:new Date().toISOString(),by:S.uid||""},{merge:true})}catch(err){toast(errMsg(err))}
+}
+async function budDoPropose(){
+  const y=budYear(),P=budPropose(y);if(!P){toast("Servono movimenti importati per fare la proposta.");return}
+  const had=budRowsRaw(y).length;if(had&&!confirm("Rifare la proposta? Le voci attuali del budget "+y+" vengono sostituite."))return;
+  const del={};for(const r of budRowsRaw(y))del[r.id]=null;
+  await budWrite(y,{rows:{...del,...P.rows}},`Proposta creata dalle medie di ${P.n} ${P.n===1?"mese":"mesi"}: correggila voce per voce`);
+}
+function budXlsx(){
+  if(!window.XLSX){toast("Excel non disponibile senza rete la prima volta.");return}
+  const y=budYear(),rows=budRows(y),act=budActual(y),done=budMonthsDone(y);
+  const aoa=[["Budget "+y],[],["Voce","Sezione","Categoria",...MESI,"Totale"]];
+  const order=["in","cat","dl","extra"];
+  for(const k of order){const l=rows.filter(r=>rowSec(r)===k);if(!l.length)continue;
+    for(const r of l)aoa.push([r.t,BSEC[k],r.c?(CAT[r.c]||CAT.altro).n:"",...r.m,sumArr(r.m)]);
+    const t=MESI.map((_,i)=>l.reduce((x,r)=>x+r.m[i],0));aoa.push(["Totale "+BSEC[k].toLowerCase(),"","",...t,sumArr(t)]);aoa.push([])}
+  const sav=MESI.map((_,i)=>rows.reduce((x,r)=>x+(r.k==="in"?1:-1)*r.m[i],0));aoa.push(["Risparmio atteso","","",...sav,sumArr(sav)]);
+  const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:34},{wch:22},{wch:22},...MESI.map(()=>({wch:10})),{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws,"Budget "+y);
+  if(done){const a2=[["Consuntivo "+y+" (mesi importati)"],[],["Voce",...MESI.slice(0,done),"Totale reale","Budget stessi mesi","Differenza"]];
+    for(const r of rows){const a=(rowAct(act,r)||Array(12).fill(0)).slice(0,done),b=sumArr(r.m.slice(0,done));a2.push([r.t,...a,sumArr(a),b,sumArr(a)-b])}
+    const w2=XLSX.utils.aoa_to_sheet(a2);w2["!cols"]=[{wch:34},...MESI.slice(0,done).map(()=>({wch:10})),{wch:12},{wch:14},{wch:12}];XLSX.utils.book_append_sheet(wb,w2,"Consuntivo")}
+  XLSX.writeFile(wb,"Budget "+y+".xlsx");
+}
 function vSoon(k){
   const t={tessere:["Tessere fedeltà","Codici a barre e QR delle vostre tessere, con il logo del negozio o la foto della tessera, pronti alla cassa anche senza rete."],
     scad:["Scadenze","Bollo, assicurazioni, revisioni e rinnovi condivisi tra voi, con l'importo che entra nel piano mensile e il pulsante per aggiungerli al calendario del telefono."],
@@ -2251,7 +2404,7 @@ function vMonth(tx,nm,fam,J){
   const PM=planMonth(),pOut=fam?PM.out*nm:0,pInc=fam?PM.inc*nm:0,hasP=!!(pOut||pInc);
   const row=(lab,p,r,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span>${hasP&&p!=null?eur(p):""}</span><span class="${cls||""}">${b?"<b>"+r+"</b>":r}</span></div>`;
   const tile=(lab,v,col)=>`<div><span>${col?`<i class="dot" style="background:${col};display:inline-block;margin-right:5px;vertical-align:-1px"></i>`:""}${lab}</span><b class="num">${eur(v)}</b><small>${out?Math.round(v/out*100):0}%</small></div>`;
-  return `<section class="block"><div class="bh"><h2>${h(perIn()[0].toUpperCase()+perIn().slice(1))}</h2>${fam?`<button class="link" data-act="budget">${hasP?"Piano mensile":"Imposta il piano"}</button>`:""}</div>
+  return `<section class="block"><div class="bh"><h2>${h(perIn()[0].toUpperCase()+perIn().slice(1))}</h2>${fam&&isAdmin()?`<button class="link" data-act="budget">${hasP?"Piano mensile":"Imposta il piano"}</button>`:""}</div>
     <div class="recon num"><span class="h"></span><span class="h">${hasP?"Previsto":""}</span><span class="h">Reale</span></div>
     ${row("Entrate",pInc||null,eur(inc))}
     ${row("Uscite",pOut||null,eur(out))}
@@ -2322,7 +2475,7 @@ function vRefunds(tx){
   </section>`;
 }
 function vSaldi(){
-  const list=contoList().filter(([k,v])=>(isFam()||v.pb===S.page)&&ruolo(k)!=="patrimonio");if(!list.length) return "";
+  const list=visConti().filter(([k,v])=>(isFam()||v.pb===S.page)&&ruolo(k)!=="patrimonio");if(!list.length) return "";
   const P=periodEnd();let liq=0,vin=0,lib=0,debt=0,miss=0;
   const rows=list.map(([id,v])=>{
     if(v.t==="carta"){const dbt=cardDebt(id,P);debt+=dbt;return `<div class="recon num"><span>${h(v.n)}</span><span>da addebitare</span><span>−${eur(dbt)}</span></div>`}
@@ -2333,7 +2486,7 @@ function vSaldi(){
 `;
   }).join("");
   const tot=liq+vin+lib;
-  return `<section class="block"><div class="bh"><h2>Conti correnti al ${ddmm(P)}</h2><button class="link" data-act="settings">Imposta saldi</button></div>
+  return `<section class="block"><div class="bh"><h2>Conti correnti al ${ddmm(P)}</h2>${isAdmin()?`<button class="link" data-act="settings">Imposta saldi</button>`:""}</div>
     <div class="recon num"><span class="h">Conto</span><span class="h">Verifica</span><span class="h">Saldo</span></div>
     ${rows}
     <div class="recon num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Liquidità corrente</b></span><span></span><span><b>${eur(liq)}</b></span></div>
@@ -2418,7 +2571,7 @@ function vMovs(){
     <select id="fp" aria-label="Beneficiario"><option value="">Ogni beneficiario</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="fpb" aria-label="Sostenuta da"><option value="">Chiunque abbia pagato</option>${payerOpts().map(m=>`<option ${f.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="fty" aria-label="Tipo di spesa"><option value="">Ogni tipo di spesa</option>${Object.entries(TIPI).map(([k,n])=>`<option value="${k}" ${f.ty===k?"selected":""}>${h(n)}</option>`).join("")}</select>
-    <select id="fs" aria-label="Mezzo"><option value="">Ogni mezzo</option>${sources().map(m=>`<option ${f.s===m?"selected":""}>${h(m)}</option>`).join("")}</select>
+    <select id="fs" aria-label="Mezzo"><option value="">Ogni mezzo</option>${(()=>{const ok=new Set(S.all.filter(inPage).map(srcName));return sources().filter(m=>ok.has(m)||m===f.s)})().map(m=>`<option ${f.s===m?"selected":""}>${h(m)}</option>`).join("")}</select>
   </div>
   <div class="toolbar"><div class="seg sm four" role="group" aria-label="Ordina per">${[["data","Data"],["importo","Importo"],["nome","Nome"],["esercente","Esercente"]].map(([k,n])=>`<button data-act="msort" data-s="${k}" aria-pressed="${ms===k}">${n}</button>`).join("")}</div><span class="hint num" style="margin:0">${list.length} movimenti${q?" in tutti i mesi":""} · spese ${eur(spent)}</span></div>`;
   if(!list.length) return html+`<p class="hint" style="margin-top:20px">Nessun movimento con questi filtri.${(f.c||f.p||f.s||f.q||f.pb||f.ty)?` <button class="link" data-act="clearf">Togli i filtri</button>`:""}</p>`;
@@ -2491,7 +2644,7 @@ function vCash(){
 function vImp(){
   const I=S.imp;
   const drop=`<label class="drop" id="drop"><input type="file" id="file" accept=".csv,.txt,.xlsx,.xls,.xlsm,.ods,text/csv"><b>${I?"Carica un altro file":"Scegli l’estratto conto"}</b><span class="hint">Excel (.xlsx, .xls) o CSV esportato dall’home banking</span></label>`;
-  const accSel=(id,sel,empty)=>`<select id="${id}">${empty?`<option value="">Scegli il conto…</option>`:""}${contoList().map(([k,v])=>`<option value="${k}" ${sel===k?"selected":""}>${h(v.n)} · ${h(FLOWS[v.t]||"")}</option>`).join("")}${empty?`<option value="__new">＋ Aggiungi un conto</option>`:""}</select>`;
+  const accSel=(id,sel,empty)=>`<select id="${id}">${empty?`<option value="">Scegli il conto…</option>`:""}${visConti().map(([k,v])=>`<option value="${k}" ${sel===k?"selected":""}>${h(v.n)} · ${h(FLOWS[v.t]||"")}</option>`).join("")}${empty?`<option value="__new">＋ Aggiungi un conto</option>`:""}</select>`;
   if(!I){
     const list=contoList(),sel=conti()[S.impAcc]?S.impAcc:"",c=sel?conti()[sel]:null;
     const tips={cc:"Lista movimenti del conto: pagamenti bancomat, prelievi, bonifici, addebiti. L’addebito mensile della carta di credito e i bonifici tra i vostri conti non contano come spesa.",
@@ -2588,7 +2741,7 @@ async function openEdit(id){
       <div class="field"><label for="ep">Beneficiario</label><select id="ep">${[...new Set([...members(),t.p].filter(Boolean))].map(m=>`<option ${t.p===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
       <div class="field"><label for="epb">Sostenuta da</label><select id="epb">${[...new Set([...payerOpts(),t.pb].filter(Boolean))].map(m=>`<option ${t.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
-    <div class="field"><label for="es">Mezzo</label><select id="es">${contoList().map(([id,v])=>`<option value="${id}" ${t.acc===id?"selected":""}>${h(v.n)}</option>`).join("")}${[...new Set([FLOWS.cc,FLOWS.carta,FLOWS.ris,CASH,t.s].filter(Boolean))].map(m=>`<option value="${h(m)}" ${!conti()[t.acc]&&t.s===m?"selected":""}>${h(m)}${contoList().length&&m!==CASH?" (senza conto)":""}</option>`).join("")}</select></div>
+    <div class="field"><label for="es">Mezzo</label><select id="es">${visConti().map(([id,v])=>`<option value="${id}" ${t.acc===id?"selected":""}>${h(v.n)}</option>`).join("")}${[...new Set([FLOWS.cc,FLOWS.carta,FLOWS.ris,CASH,t.s].filter(Boolean))].map(m=>`<option value="${h(m)}" ${!conti()[t.acc]&&t.s===m?"selected":""}>${h(m)}${contoList().length&&m!==CASH?" (senza conto)":""}</option>`).join("")}</select></div>
     ${t.a>0&&(k==="entrata"||k==="spesa")&&t.acc!==undefined?(isRefund(t)?`<div class="banner" style="margin:4px 0 0">Rimborso di: ${t.rif.map(r=>{const e=refOf(r);return e?h(e.m)+" ("+ddmm(e.d)+", "+eur(-e.a)+")":"una spesa"}).join(", ")}. <button class="link" data-act="unrefund">Scollega</button></div>`:`<div class="btns" style="margin:4px 0 0"><button class="btn ghost" data-act="refund" data-id="${h(t.id)}">È il rimborso di una spesa…</button></div>`):""}
     <div class="field"><label for="en">Nota</label><input type="text" id="en" value="${h(t.n||"")}"></div>
     ${t.s!==CASH?`<label class="check"><input type="checkbox" id="erule" checked><span>Usa questa categoria e questo beneficiario per tutti i movimenti di “${h(t.m)}”, anche futuri</span></label>`:""}
@@ -2619,6 +2772,7 @@ async function saveEdit(){
   }catch(e){toast(errMsg(e))}
 }
 function openSettings(){
+  if(!isAdmin())return openUserSettings();
   setTimeout(async()=>{const r=await countFixes();S.fixIds=r?r.ids:[];const el=$("#fixn");if(el)el.textContent=r?String(r.n):"non disponibile"},0);
   S.sheet={type:"settings"};
   const rules=Object.entries(S.settings.rules||{}).filter(([,v])=>v&&v.c).sort((a,b)=>a[0].localeCompare(b[0]));
@@ -2680,6 +2834,16 @@ function openSettings(){
       <p class="hint">File CSV che si apre direttamente in Excel.</p>
     </div>
     <div class="field"><label for="skey">Chiave API Claude (resta solo su questo dispositivo)</label><input type="password" id="skey" autocomplete="off" placeholder="sk-ant-…" value="${h(apiKey())}"><p class="hint">Serve solo a chi importa gli estratti. Non finisce nel database e non è visibile dagli altri.</p></div>
+    <div class="field"><label for="smodel">Modello per il riconoscimento</label><select id="smodel"><option value="claude-haiku-5-5" ${apiModel()==="claude-haiku-5-5"?"selected":""}>Haiku: più economico</option><option value="claude-sonnet-5-5" ${apiModel()==="claude-sonnet-5-5"?"selected":""}>Sonnet: più preciso</option></select></div>
+    <div class="btns"><button class="btn" data-act="savekey">Salva chiave e modello</button></div>
+    <p class="hint">Accesso come ${h(S.uid||"")}</p>
+    <div class="btns"><button class="btn ghost" data-act="close">Chiudi</button><button class="btn danger" data-act="logout">Esci</button></div>`);
+}
+function openUserSettings(){
+  S.sheet={type:"settings"};
+  openSheet(`<h3>Impostazioni</h3><div class="sub">Versione ${h(APP_VERSION)}</div>
+    <p class="hint">Conti, categorie, regole e saldi li gestisce ${h(S.settings.admin||payers()[0])}. Qui ci sono solo le impostazioni di questo telefono.</p>
+    <div class="field"><label for="skey">Chiave API Claude (resta solo su questo dispositivo)</label><input type="password" id="skey" autocomplete="off" placeholder="sk-ant-…" value="${h(apiKey())}"><p class="hint">Serve solo se importi tu gli estratti e vuoi che Claude riconosca gli esercenti.</p></div>
     <div class="field"><label for="smodel">Modello per il riconoscimento</label><select id="smodel"><option value="claude-haiku-5-5" ${apiModel()==="claude-haiku-5-5"?"selected":""}>Haiku: più economico</option><option value="claude-sonnet-5-5" ${apiModel()==="claude-sonnet-5-5"?"selected":""}>Sonnet: più preciso</option></select></div>
     <div class="btns"><button class="btn" data-act="savekey">Salva chiave e modello</button></div>
     <p class="hint">Accesso come ${h(S.uid||"")}</p>
@@ -2763,12 +2927,13 @@ function render(){
   document.querySelector('[data-act="settings"]').style.visibility=gated?"hidden":"visible";
   if(gated){$("#monthbox").style.visibility="hidden";$("#view").innerHTML=S.authed===null?`<p class="hint" style="padding-top:30px">Caricamento…</p>`:vLogin();return}
   $("#mlabel").textContent=perLabel();
+  if(!pages().includes(S.page))S.page="Famiglia";
   const sp=SPESE_VIEWS.includes(S.view);if(sp)S.spView=S.view;
-  $("#monthbox").style.visibility=sp&&S.view!=="imp"?"visible":"hidden";$("#monthbox").style.display=sp?"":"none";
+  $("#monthbox").style.visibility=sp&&S.view!=="imp"&&S.view!=="bud"?"visible":"hidden";$("#monthbox").style.display=sp?"":"none";
   if(S.view==="casa")$(".brand").innerHTML=casaHead();else $(".brand").textContent=sp?"Spese":({tessere:"Tessere",scad:"Calendario",liste:"Liste"}[S.view]||"Casa");
   document.querySelectorAll("nav.tabs [data-nav]").forEach(b=>b.setAttribute("aria-current",(sp?"spese":S.view)===b.dataset.nav?"page":"false"));
   const banner=S.newVer?`<div class="banner" style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between"><span>È disponibile una nuova versione (${h(S.newVer)}).</span><button class="btn" data-act="reload" style="padding:8px 14px">Aggiorna</button></div>`:"";
-  const v={casa:vCasa,tessere:vCards,scad:vCalendar,liste:vLists,home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
+  const v={bud:vBudget,casa:vCasa,tessere:vCards,scad:vCalendar,liste:vLists,home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
   const off=navigator.onLine===false?`<div class="banner" style="margin-top:8px">Senza rete: vedi i dati salvati sul telefono. Le modifiche partono appena torna la connessione.</div>`:"";
   const vw=$("#view");if(S.lastView!==S.view){vw.classList.remove("fade");void vw.offsetWidth;vw.classList.add("fade");S.lastView=S.view}
   $("#view").innerHTML=off+banner+(sp?spSub():"")+v();
@@ -2835,6 +3000,15 @@ document.addEventListener("click",async e=>{
   else if(act==="cal-day"){S.calDay=S.calDay===el.dataset.d?"":el.dataset.d;render()}
   else if(act==="cal-add") calAdd(el.dataset.d||"");
   else if(act==="ev-new") evForm("",el.dataset.d||"");
+  else if(act==="bud-y"){S.budYear=budYear()+(+el.dataset.d);render()}
+  else if(act==="bud-m"){const v=el.dataset.m;S.budM=v===""||String(S.budM??"")===v?"":+v;render()}
+  else if(act==="bud-row") budRowForm(el.dataset.id);
+  else if(act==="bud-add") budRowForm("");
+  else if(act==="bud-save") budSaveRow();
+  else if(act==="bud-del"){const id=S.sheet&&S.sheet.budRow;if(!id||!confirm("Eliminare questa voce del budget?"))return;budWrite(budYear(),{rows:{[id]:null}},"Voce eliminata")}
+  else if(act==="bud-eq"){const v=num($("#btot").value||"");if(isNaN(v)){toast("Scrivi il totale dell'anno.");return}const m=Math.round(v/12*100)/100;for(let i=0;i<12;i++)$("#bm"+i).value=fmtNum(i<11?m:Math.round((v-m*11)*100)/100)}
+  else if(act==="bud-propose") budDoPropose();
+  else if(act==="bud-xlsx") budXlsx();
   else if(act==="go-imp"){closeSheet();S.view="imp";render();window.scrollTo(0,0)}
   else if(act==="ev-open") openEv(el.dataset.id,el.dataset.s);
   else if(act==="ev-edit") evForm(S.sheet&&S.sheet.ev);
@@ -3111,11 +3285,12 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
   onAuthStateChanged(S.auth,u=>{
     unsubs.forEach(f=>f());unsubs=[];
     S.authed=!!u;S.uid=u?u.email:null;
-    if(!u){S.months={};S.cards={};S.dls={};S.evs={};S.items={};S.lists={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
+    if(!u){S.bud={};S.months={};S.cards={};S.dls={};S.evs={};S.items={};S.lists={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
     const denied=err=>{if(err&&err.code==="permission-denied"){S.authMsg="Questo account non è autorizzato a usare l’app.";signOut(S.auth)}else toast("Connessione ai dati persa: ricarica la pagina.")};
     unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes();fixGenius()},denied));
     unsubs.push(onSnapshot(collection(S.db,"items"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.items=m;if(!paintList()&&S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"lists"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.lists=m;if(!paintList()&&S.view==="casa")render()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"budget"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.bud=m;if(S.view==="bud")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"events"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.evs=m;S.loadedEvs=true;seedEvents();if(S.view==="scad"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"deadlines"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.dls=m;if(S.view==="scad"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"cards"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.cards=m;if(S.view==="tessere"||S.view==="casa")render()},denied));
