@@ -433,7 +433,7 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .wkc{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 0;color:inherit;font:inherit;cursor:pointer}.wkc:first-of-type{border-top:0}
 .wkc .wkcl{display:block;color:var(--muted);font-size:.85rem}.wkc .wkcl em{font-style:normal;font-size:.75rem;background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:1px 6px;margin-left:4px}
 .wkc>b{display:block;font:800 1.6rem/1.2 var(--display);margin:2px 0 4px}.wkc>b small,.wks{display:inline!important;margin:0!important;font:500 .95rem var(--body);color:var(--muted)}.wkc .neg{color:var(--danger)}.wkc>b.neg{color:var(--danger)}.wkc small{display:block;color:var(--muted);font-size:.82rem;margin-top:4px}
-.qadd{padding:10px 18px}.cbrow{grid-template-columns:12px minmax(0,1fr) auto 28px}.cbp{color:var(--muted);font-weight:500;font-size:.8rem}.cplus{width:28px;height:28px;border-radius:50%;background:var(--sunk);display:grid;place-items:center;font-weight:700;color:var(--primary)}.cbh{font:600 .8rem var(--body);color:var(--muted);margin:12px 0 0;text-transform:uppercase;letter-spacing:.04em}.qtag{background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:0 6px}.qbig{font:700 1.5rem/1.2 var(--display)!important}
+.qadd{padding:10px 18px}.catw{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line)}.catw:first-of-type{border-top:0}.catw>.row{flex:1;border-top:0}.catw>.cplus{border:0;cursor:pointer;flex:none}.cbrow{grid-template-columns:12px minmax(0,1fr) auto 28px}.cbp{color:var(--muted);font-weight:500;font-size:.8rem}.cplus{width:28px;height:28px;border-radius:50%;background:var(--sunk);display:grid;place-items:center;font-weight:700;color:var(--primary)}.cbh{font:600 .8rem var(--body);color:var(--muted);margin:12px 0 0;text-transform:uppercase;letter-spacing:.04em}.qtag{background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:0 6px}.qbig{font:700 1.5rem/1.2 var(--display)!important}
 .wkgo{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:8px 0 4px;padding:12px 14px;border:1px solid var(--card-bd,var(--line));border-radius:var(--r-card,14px);background:var(--surface);box-shadow:var(--card-sh);color:inherit;text-align:left;cursor:pointer;font:inherit}
 .wkgo small{display:block;color:var(--muted);font-size:.82rem}.wkgo>span:last-child{font-size:1.4rem;color:var(--muted)}
 .wkhero{padding-top:12px}.wkhero small{color:var(--muted);font-size:.85rem}.wkhero>b{display:block;font:800 2rem/1.15 var(--display);margin:2px 0 6px}.wkhero .neg,.wkrow .neg,.row .amt.neg{color:var(--danger)}
@@ -515,7 +515,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "65 · 23/11/2026";
+const APP_VERSION = "66 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1181,10 +1181,10 @@ function vPersonal(){
   // spese personali per categoria (escluse quelle pagate dal patrimonio), con i contanti non attribuiti
   const sp=spOf(tx).filter(t=>!paidByPatr(t)&&!isMutuoCasa(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
-  const BB=perCatBud(isFam()?BFAM:S.page);for(const c in BB)if(c!=="_ys"&&!(c in byC))byC[c]=0;
+  const SQ=isFam()?BFAM:S.page,BB=perCatBud(SQ),QQ=perQuick(SQ);for(const c in QQ)byC[c]=(byC[c]||0)+QQ[c];for(const c in BB)if(c!=="_ys"&&!(c in byC))byC[c]=0;
   const cats=Object.entries(byC).filter(([k,v])=>v>0.004||BB[k]>0).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
   const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
-    :catBudRow(c,v,BB);
+    :catBudRow(c,v,BB,QQ,SQ);
   // ultimi mesi
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...allocation(S.all.filter(t=>ymOf(t.d)===ym&&inPage(t)),ym,ym)})).filter(r=>r.inc||r.spese||r.casa);
@@ -1866,7 +1866,11 @@ function budCanEdit(sc){return isAdmin()||sc===meName()}
 function budId(y,sc){return (y||budYear())+"-"+(sc||budScope())}
 function budDoc(y,sc){return (S.bud||{})[budId(y,sc)]||{}}
 function budRowsRaw(y,sc){return Object.entries(budDoc(y,sc).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
-function budRows(y,sc){return budRowsRaw(y,sc)}
+// nel budget di Famiglia i versamenti di ciascuno sono quelli previsti nel suo budget personale (voce "Versamento al conto di casa")
+function budRows(y,sc){const rows=budRowsRaw(y,sc);if(sc!==BFAM||!rows.length)return rows;
+  for(const p of payers()){const pr=budRowsRaw(y,p).filter(r=>r.s==="casa");if(!pr.length)continue;const m=Array(12).fill(0);pr.forEach(r=>r.m.forEach((v,i)=>m[i]+=v));
+    let r=rows.find(x=>x.src==="in:vers:"+p);if(!r){r={id:"in-"+hash(p),t:"Versamento di "+p,k:"in",src:"in:vers:"+p};rows.push(r)}r.m=m;r.link=p}
+  return rows}
 function rowAct(act,r,rows){
   if(r.src==="in:other"&&rows){const own=new Set(rows.map(x=>x.src));const a=Array(12).fill(0);let any=false;for(const [k,v] of Object.entries(act))if(k.startsWith("in:")&&!k.startsWith("in:vers:")&&k!=="in:casa"&&!own.has(k)){any=true;v.forEach((x,i)=>a[i]+=x)}return any?a:null}
   return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
@@ -1975,7 +1979,7 @@ function vBudget(){
   const bars=`<div class="budbars">${marg.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: margine ${eur(v)}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
   const row=r=>{const v=val(r),a=actOf(r),over=a!=null&&(r.k==="in"?a<v*0.95:a>v*1.05);
     return `<button class="row brow" data-act="bud-row" data-id="${h(r.id)}">${r.c?catDot(r.c):`<i class="dot" style="background:${r.k==="in"?"var(--ok)":r.k==="sav"?"#378ADD":"var(--muted)"}"></i>`}
-      <span style="min-width:0"><span class="dlt">${h(r.t)}</span>${r.s==="dl"?`<span class="hint" style="display:block;margin:0">Scadenza del Calendario</span>`:""}${a!=null?`<span class="hint" style="display:block;margin:0">Reale ${eur(a)}${v?` · ${Math.round(a/v*100)}%`:""}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v?a/v*100:0)}%"></i></span>`:""}</span>
+      <span style="min-width:0"><span class="dlt">${h(r.t)}</span>${r.s==="dl"?`<span class="hint" style="display:block;margin:0">Scadenza del Calendario</span>`:""}${r.link?`<span class="hint" style="display:block;margin:0">Dal budget di ${h(r.link)}</span>`:""}${a!=null?`<span class="hint" style="display:block;margin:0">Reale ${eur(a)}${v?` · ${Math.round(a/v*100)}%`:""}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v?a/v*100:0)}%"></i></span>`:""}</span>
       <span class="amt num">${eur(v)}</span></button>`};
   const sec=(k,note)=>{const l=rows.filter(r=>grpOf(r)===k).sort((a,b)=>sumArr(b.m)-sumArr(a.m));if(!l.length&&k!=="sav")return "";const t=l.reduce((x,r)=>x+val(r),0);
     return `<section class="block"><h2 style="display:flex;justify-content:space-between">${BGRP[k]}<span class="num">${eur(t)}</span></h2>${note?`<p class="hint" style="margin-top:-2px">${note}</p>`:""}${l.map(row).join("")}<div style="height:4px"></div></section>`};
@@ -2118,12 +2122,18 @@ function vWeek(){
 // budget per categoria nel periodo scelto (Riepilogo): somma dei mesi, dal budget dell'anno o da quello più vicino
 function perCatBud(sc){const B={},ys=new Set();for(const ym of perMonths()){const y=+ym.slice(0,4),by=wkBudYear(y,sc);if(by==null)continue;if(by!==y)ys.add(by);const mi=+ym.slice(5,7)-1;
   for(const r of budRows(by,sc))if(r.k==="out"&&r.c&&r.s!=="casa"&&r.m[mi])B[r.c]=(B[r.c]||0)+r.m[mi]}B._ys=[...ys];return B}
-function catBudRow(c,v,BB){const b=BB[c]||0,over=b>0&&v>b*1.05;
-  return `<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span style="min-width:0">${h((CAT[c]||CAT.altro).n)}${b?`<span class="hint" style="display:block;margin:0">previsti ${eur(b)} · ${over?`<span class="neg">sforato di ${eur(v-b)}</span>`:`restano ${eur(b-v)}`}</span><span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v/b*100)}%"></i></span>`:""}</span><span class="amt num ${over?"neg":""}">${eur(v)}</span></button>`}
+// spese al volo del periodo non ancora trovate nell'estratto (a mese chiuso e importato contano solo i movimenti)
+function perQuick(sc){const qm=quickMatch(),o={},lastD=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,"");
+  for(const q of quickList()){const ym=ymOf(q.d);if(q.sc!==sc||qm[q.id]||ym<S.per.from||ym>S.per.to)continue;const [y,m]=ym.split("-").map(Number);if(lastD>=ym+"-"+String(new Date(y,m,0).getDate()).padStart(2,"0"))continue;o[q.c||"altro"]=(o[q.c||"altro"]||0)+q.a}return o}
+function catBudRow(c,v,BB,QQ,sc){const b=BB[c]||0,over=b>0&&v>b*1.05,qv=(QQ||{})[c]||0,can=sc&&(sc===BFAM||sc===meName());
+  const sub=[b?`previsti ${eur(b)} · ${over?`<span class="neg">sforato di ${eur(v-b)}</span>`:`restano ${eur(b-v)}`}`:"",qv?`di cui al volo ${eur(qv)}`:""].filter(Boolean).join(" · ");
+  const btn=`<button class="row" data-act="filtercat" data-c="${c}">${catDot(c)}<span style="min-width:0">${h((CAT[c]||CAT.altro).n)}${sub?`<span class="hint" style="display:block;margin:0">${sub}</span>`:""}${b?`<span class="bpb"><i class="${over?"ko":""}" style="width:${Math.min(100,v/b*100)}%"></i></span>`:""}</span><span class="amt num ${over?"neg":""}">${eur(v)}</span></button>`;
+  return can?`<div class="catw">${btn}<button class="cplus" data-act="q-new" data-c="${h(c)}" data-p="${h(sc)}" aria-label="Segna una spesa in ${h((CAT[c]||CAT.altro).n)}">+</button></div>`:btn}
 function catBudNote(BB){return BB._ys&&BB._ys.length?`<p class="hint" style="padding-bottom:8px">Previsti presi dal budget ${BB._ys.join(", ")} (per questi mesi non c'è ancora un budget).</p>`:""}
 function budRowForm(id){
   const y=budYear(),sc=budScope(),r=id?budRows(y,sc).find(x=>x.id===id):{t:"",k:"out",s:"cat",c:"altro",m:Array(12).fill(0)};if(!r)return;
   S.sheet={budRow:id||"new"};
+  if(r.link){openSheet(`<h3>${h(r.t)}</h3><div class="sub">Collegata al budget di ${h(r.link)}: è il «Versamento al conto di casa» previsto lì, mese per mese. Per cambiarla modifica quella voce, qui si aggiorna da sola.</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="bud-sc" data-p="${h(r.link)}" style="flex:1">Vai al budget di ${h(r.link)}</button><button class="btn ghost" data-act="close">Chiudi</button></div>`);return}
   const opt=(v,l,sel)=>`<option value="${h(v)}"${v===sel?" selected":""}>${h(l)}</option>`;
   if(!budCanEdit(sc)){openSheet(`<h3>${h(r.t)}</h3><div class="sub">${BGRP[grpOf(r)]} · totale ${eur(sumArr(r.m))}</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);return}
   const sk=rowSec(r);
@@ -2248,10 +2258,10 @@ function vFamily(){
   // spese di casa per categoria, con i contanti prelevati e non attribuiti
   const tx=F.list,sp=spOf(tx).filter(t=>!paidByPatr(t)&&!F.toSav.has(t)),byC={};sp.forEach(t=>{const c=t.c||"altro";byC[c]=(byC[c]||0)-t.a});
   const un=cashUnatt(tx);if(un>0.004)byC._cash=un;
-  const BB=perCatBud(isFam()?BFAM:S.page);for(const c in BB)if(c!=="_ys"&&!(c in byC))byC[c]=0;
+  const SQ=isFam()?BFAM:S.page,BB=perCatBud(SQ),QQ=perQuick(SQ);for(const c in QQ)byC[c]=(byC[c]||0)+QQ[c];for(const c in BB)if(c!=="_ys"&&!(c in byC))byC[c]=0;
   const cats=Object.entries(byC).filter(([k,v])=>v>0.004||BB[k]>0).sort((a,b)=>b[1]-a[1]),top=cats.slice(0,5),rest=cats.slice(5),restV=rest.reduce((x,[,v])=>x+v,0);
   const catRow=([c,v])=>c==="_cash"?`<button class="row" data-nav="cash"><i class="dot" style="background:${MEZZI_COL.contanti}"></i><span>Contanti non attribuiti</span><span class="amt num">${eur(v)}</span></button>`
-    :catBudRow(c,v,BB);
+    :catBudRow(c,v,BB,QQ,SQ);
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...famFlows(ym,ym)})).filter(r=>r.inc||r.spese);
   return `${pageSeg()}
@@ -3223,7 +3233,7 @@ document.addEventListener("click",async e=>{
   else if(act==="cal-day"){S.calDay=S.calDay===el.dataset.d?"":el.dataset.d;render()}
   else if(act==="cal-add") calAdd(el.dataset.d||"");
   else if(act==="ev-new") evForm("",el.dataset.d||"");
-  else if(act==="bud-sc"){S.budScope=el.dataset.p;S.budM="";render()}
+  else if(act==="bud-sc"){if(S.sheet&&S.sheet.budRow)closeSheet();S.budScope=el.dataset.p;S.budM="";render()}
   else if(act==="bud-y"){S.budYear=budYear()+(+el.dataset.d);render()}
   else if(act==="bud-m"){const v=el.dataset.m;S.budM=v===""||String(S.budM??"")===v?"":+v;render()}
   else if(act==="bud-row") budRowForm(el.dataset.id);
