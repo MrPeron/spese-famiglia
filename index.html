@@ -96,6 +96,13 @@ nav.sub button[aria-current="page"]{background:var(--primary);border-color:var(-
 #ccode>svg:not([id]){width:min(240px,70vw);height:auto}
 .cnum{font:600 1.05rem/1.3 ui-monospace,Menlo,monospace;letter-spacing:.08em;margin-top:10px;word-break:break-all}
 .kimg{display:flex;gap:12px;align-items:flex-start}
+.row.dlrow{grid-template-columns:44px minmax(0,1fr) auto;gap:12px}
+.dldate{display:flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:46px;border-radius:10px;background:var(--sunk);font-size:.72rem;color:var(--muted);text-transform:uppercase;line-height:1.1}
+.dldate b{font:800 1.15rem/1 var(--display);color:var(--ink)}
+.dldate.soon{background:var(--ochre-soft)}.dldate.soon b{color:var(--ochre)}
+.dldate.late{background:var(--danger);color:#fff}.dldate.late b{color:#fff}
+.dlt{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dlk.soon{color:var(--ochre)}.dlk.late{color:var(--danger)}
 #kprev{width:110px;flex:0 0 110px}
 
 .banner{margin:4px 0 14px;padding:10px 14px;border-radius:10px;background:var(--ochre-soft);color:var(--ink);font-size:.9rem}
@@ -342,7 +349,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "41 · 22/11/2026";
+const APP_VERSION = "42 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1086,7 +1093,7 @@ function vCasa(){
     ${tile("liste",svg('<path d="M9 6h12M9 12h12M9 18h12"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/>'),"Lista della spesa","In arrivo")}
   </div>
   <button class="block" data-nav="scad" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">
-    <h2>Prossime scadenze</h2><p class="hint" style="padding-bottom:10px">In arrivo: bollo, assicurazioni, revisioni e rinnovi, collegati alle spese.</p>
+    <h2>Prossime scadenze</h2>${casaDl()}<div style="height:6px"></div>
   </button>`;
 }
 // ---------- Tessere fedeltà: codice a barre o QR, logo dal sito del negozio o foto della tessera ----------
@@ -1214,6 +1221,126 @@ async function saveCard(){
   const id=sh.cardEdit==="new"?uid():sh.cardEdit,old=(S.cards||{})[id]||{};
   const data={n,num,f:$("#kf").value||"",pb:$("#kpb").value,site,logo:sh.logo||"",foto:sh.foto||"",col:old.col||"",u:old.u||new Date().toISOString(),by:S.uid||""};
   try{const p=setDoc(doc(S.db,"cards",id),data);S.cards={...(S.cards||{}),[id]:data};closeSheet();render();toast("Tessera salvata");await p}catch(err){toast(errMsg(err))}
+}
+// ---------- Scadenze condivise: data, importo, ripetizione; abbinate ai movimenti e al calendario del telefono ----------
+const REP={"":"Una volta",m1:"Ogni mese",m3:"Ogni 3 mesi",m6:"Ogni 6 mesi",y1:"Ogni anno",y2:"Ogni 2 anni"};
+const DL_HINTS=[["Bollo auto","auto"],["Assicurazione auto","auto"],["Revisione auto","auto"],["Tagliando","auto"],["Assicurazione casa","banca"],["TARI","casa"],["IMU","casa"],["Abbonamento","abbonamenti"],["Retta scuola","figli"]];
+function dls(){return Object.entries(S.dls||{}).map(([id,x])=>({id,...x}))}
+function addMonthsISO(iso,n){const [y,m,d]=iso.split("-").map(Number);const t=new Date(Date.UTC(y,m-1+n,1));const ym=t.toISOString().slice(0,7);return ym+"-"+String(Math.min(d,lastDay(ym))).padStart(2,"0")}
+function nextDate(x){if(!x.rep)return null;const n=+x.rep.slice(1)*(x.rep[0]==="y"?12:1);return addMonthsISO(x.d,n)}
+function daysTo(iso){return Math.round((Date.parse(iso)-Date.parse(today()))/86400000)}
+// tutte le date in cui cade una scadenza entro "to" (per i totali dei prossimi mesi)
+function occurrences(x,to){const out=[];let d=x.d,i=0;while(d&&d<=to&&i<60){out.push(d);if(!x.rep)break;d=addMonthsISO(x.d,(++i)*(+x.rep.slice(1))*(x.rep[0]==="y"?12:1))}return out}
+// pagamento probabile: spesa entro 20 giorni dalla scadenza, stesso importo (±5%) e, se indicata, la parola nella descrizione
+function dlMatch(x){
+  if(!x.a||x.done) return null;const kw=norm(x.kw||"").trim(),from=shiftDay(x.d,-20),to=shiftDay(x.d,20),used=new Set((x.paid||[]).map(p=>p.tx));
+  let best=null;
+  for(const t of S.all){
+    if(t.d<from||t.d>to||t.a>=0||t.k==="giroconto"||used.has(t.id)) continue;
+    if(Math.abs(Math.abs(t.a)-x.a)>Math.max(1,x.a*.05)) continue;
+    if(kw&&!norm((t.x||"")+" "+(t.m||"")).includes(kw)) continue;
+    const sc=dayDiff(t.d,x.d)+Math.abs(Math.abs(t.a)-x.a);if(!best||sc<best.sc)best={t,sc};
+  }
+  return best&&best.t;
+}
+function dlRow(x){
+  const n=daysTo(x.d),late=n<0,soon=n>=0&&n<=(x.pre??7),m=dlMatch(x);
+  const when=late?`scaduta da ${-n} ${-n===1?"giorno":"giorni"}`:n===0?"oggi":n===1?"domani":n<=31?`tra ${n} giorni`:"";
+  return `<button class="row dlrow" data-act="dl-open" data-id="${h(x.id)}">
+    <span class="dldate${late?" late":soon?" soon":""}"><b>${x.d.slice(8,10)}</b>${new Date(x.d+"T12:00:00").toLocaleDateString("it-IT",{month:"short"})}</span>
+    <span style="min-width:0"><span class="dlt">${h(x.t)}</span><span class="hint" style="display:block;margin:0">${[x.pb,REP[x.rep||""]!=="Una volta"?REP[x.rep].toLowerCase():"",when].filter(Boolean).map(h).join(" · ")}</span>
+      ${m?`<span class="hint" style="display:block;margin:2px 0 0;color:var(--ok)">Forse pagata il ${ddmm(m.d)}: tocca per confermare</span>`:""}</span>
+    <span class="amt num">${x.a?eur(x.a):""}</span></button>`;
+}
+function vDeadlines(){
+  const all=dls().filter(x=>!x.done).sort((a,b)=>a.d.localeCompare(b.d)||a.t.localeCompare(b.t));
+  if(!all.length&&!dls().length) return `<section class="empty"><h1>Le scadenze di casa, senza sorprese.</h1>
+    <p>Bollo, assicurazioni, revisioni, tasse e rinnovi: li vedete entrambi, con l'importo e la data. Quando arriva il pagamento tra i movimenti l'app lo riconosce, e puoi aggiungere ogni scadenza al calendario del telefono con il suo promemoria.</p>
+    <div class="btns"><button class="btn" data-act="dl-new">Aggiungi una scadenza</button></div></section>`;
+  const t=today(),d30=shiftDay(t,30),y1=shiftDay(t,365);
+  const sum=(to)=>dls().filter(x=>!x.done).reduce((s,x)=>s+(x.a||0)*occurrences(x,to).filter(d=>d>=t||x.d<t&&d===x.d).length,0);
+  const late=all.filter(x=>x.d<t),near=all.filter(x=>x.d>=t&&x.d<=d30),later=all.filter(x=>x.d>d30);
+  const grp=(title,l)=>l.length?`<section class="block"><h2>${title}</h2>${l.map(dlRow).join("")}<div style="height:4px"></div></section>`:"";
+  const done=dls().filter(x=>x.done).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,10);
+  return `<div class="hero3" style="margin-top:12px"><div><span>Prossimi 30 giorni</span><b class="num">${eur(sum(d30))}</b></div><div><span>Prossimi 12 mesi</span><b class="num">${eur(sum(y1))}</b></div></div>
+    <div class="btns" style="margin:10px 0 0"><button class="btn" data-act="dl-new" style="padding:9px 14px">+ Aggiungi</button></div>
+    ${grp("Scadute",late)}${grp("Nei prossimi 30 giorni",near)}${grp("Più avanti",later)}
+    ${done.length?`<details class="block" style="padding-bottom:6px"><summary style="cursor:pointer;padding:12px 0;font-weight:600">Fatte (${done.length})</summary>${done.map(dlRow).join("")}</details>`:""}
+    <p class="hint" style="margin:14px 2px">Le scadenze che si ripetono, quando le segni come fatte, passano da sole alla data successiva. I totali contano anche le ripetizioni.</p>`;
+}
+function openDl(id){
+  const x=(S.dls||{})[id];if(!x)return;const m=dlMatch(x);S.sheet={dl:id,tx:m&&m.id};
+  const last=(x.paid||[]).slice(-1)[0];
+  openSheet(`<h3>${h(x.t)}</h3><div class="sub">${h(itDate(x.d))}${x.a?" · "+eur(x.a):""} · ${h(REP[x.rep||""])}${x.pb?" · "+h(x.pb):""}</div>
+    ${x.note?`<p style="margin:8px 0">${h(x.note)}</p>`:""}
+    ${m?`<div class="banner" style="margin-top:10px">Tra i movimenti c'è <b>${h(m.m||m.x||"")}</b> del ${itDate(m.d)} per ${eur(Math.abs(m.a))}: è il pagamento di questa scadenza?</div>`:""}
+    ${last?`<p class="hint">Ultima volta: ${itDate(last.d)}${last.a?" · "+eur(last.a):""}</p>`:""}
+    <div class="btns">${x.done?`<button class="btn ghost" data-act="dl-undo" style="flex:1">Riapri</button>`:`<button class="btn" data-act="dl-done" style="flex:1">${m?"Sì, pagata":"Segna come fatta"}</button>`}
+      <button class="btn ghost" data-act="dl-edit" style="flex:1">Modifica</button></div>
+    <div class="field"><span class="lab">Aggiungi al calendario</span>
+      <div class="btns" style="margin:0"><button class="btn ghost" data-act="dl-ics" style="flex:1">Calendario del telefono</button><button class="btn ghost" data-act="dl-gcal" style="flex:1">Google Calendar</button></div>
+      <p class="hint">Con promemoria ${x.pre??7} giorni prima${x.rep?" e la ripetizione":""}.</p></div>`);
+}
+function dlForm(id){
+  const x=id?(S.dls||{})[id]||{}:{rep:"y1",pre:7,pb:famName(),c:"banca"};
+  S.sheet={dlEdit:id||"new"};
+  const opt=(v,l,sel)=>`<option value="${h(v)}"${v===sel?" selected":""}>${h(l)}</option>`;
+  openSheet(`<h3>${id?"Modifica scadenza":"Nuova scadenza"}</h3>
+    ${id?"":`<div class="chips" style="margin-top:8px">${DL_HINTS.map(([t,c])=>`<button class="chip" data-act="dl-hint" data-t="${h(t)}" data-c="${c}">${h(t)}</button>`).join("")}</div>`}
+    <div class="field"><label for="xt">Cosa</label><input id="xt" value="${h(x.t||"")}" placeholder="Bollo BMW" autocomplete="off"></div>
+    <div class="two"><div class="field" style="margin-top:0"><label for="xd">Data</label>${dateInput("xd",x.d||"","Data")}</div>
+      <div class="field" style="margin-top:0"><label for="xa">Importo (se lo sai)</label><input id="xa" inputmode="decimal" value="${x.a?fmtNum(x.a):""}" placeholder="0,00"></div></div>
+    <div class="two"><div class="field" style="margin-top:0"><label for="xr">Si ripete</label><select id="xr">${Object.entries(REP).map(([k,l])=>opt(k,l,x.rep||"")).join("")}</select></div>
+      <div class="field" style="margin-top:0"><label for="xp">Avviso</label><select id="xp">${[[1,"1 giorno prima"],[3,"3 giorni prima"],[7,"1 settimana prima"],[14,"2 settimane prima"],[30,"1 mese prima"]].map(([v,l])=>opt(String(v),l,String(x.pre??7))).join("")}</select></div></div>
+    <div class="two"><div class="field" style="margin-top:0"><label for="xpb">Per chi</label><select id="xpb">${members().map(m=>opt(m,m,x.pb||famName())).join("")}</select></div>
+      <div class="field" style="margin-top:0"><label for="xc">Categoria</label><select id="xc">${CATS.map(([k,n])=>opt(k,n,x.c||"banca")).join("")}</select></div></div>
+    <div class="field"><label for="xk">Parola nel movimento (facoltativa)</label><input id="xk" value="${h(x.kw||"")}" placeholder="es. ACI, Allianz, Comune" autocomplete="off">
+      <p class="hint">Serve a riconoscere il pagamento tra i movimenti importati: deve comparire nella descrizione. Senza, basta l'importo vicino alla data.</p></div>
+    <div class="field"><label for="xn">Note</label><input id="xn" value="${h(x.note||"")}" autocomplete="off"></div>
+    <div class="btns"><button class="btn" data-act="dl-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="dl-del">Elimina</button>`:""}</div>`);
+}
+async function saveDl(){
+  const sh=S.sheet;if(!sh||!sh.dlEdit)return;
+  const t=$("#xt").value.trim(),d=readDate("xd"),a=$("#xa").value.trim()?num($("#xa").value):0;
+  if(!t){toast("Scrivi cosa scade.");return}
+  if(!d){toast("Data non valida: scrivila come gg/mm/aaaa.");return}
+  if(isNaN(a)||a<0){toast("Importo non valido.");return}
+  const id=sh.dlEdit==="new"?uid():sh.dlEdit,old=(S.dls||{})[id]||{};
+  const data={...old,t,d,a:Math.round(a*100)/100,rep:$("#xr").value,pre:+$("#xp").value,pb:$("#xpb").value,c:$("#xc").value,kw:$("#xk").value.trim(),note:$("#xn").value.trim(),by:S.uid||""};
+  await dlWrite(id,data,"Scadenza salvata");
+}
+async function dlWrite(id,data,msg){
+  try{const p=setDoc(doc(S.db,"deadlines",id),data);S.dls={...(S.dls||{}),[id]:data};closeSheet();render();if(msg)toast(msg);await p}catch(err){toast(errMsg(err))}
+}
+async function dlDone(){
+  const id=S.sheet&&S.sheet.dl,x=id&&(S.dls||{})[id];if(!x)return;
+  const t=S.sheet.tx&&S.byId[S.sheet.tx];
+  const paid=[...(x.paid||[]),{d:t?t.d:today(),due:x.d,a:t?Math.abs(t.a):x.a||0,tx:t?t.id:""}].slice(-12);
+  const nx=nextDate(x);
+  await dlWrite(id,nx?{...x,paid,d:nx}:{...x,paid,done:true},nx?"Fatta: prossima il "+itDate(nx):"Segnata come fatta");
+}
+// .ics: evento di un giorno con promemoria e ripetizione; il telefono lo apre nel suo calendario
+function icsText(x){
+  const d=x.d.replace(/-/g,""),e=shiftDay(x.d,1).replace(/-/g,""),esc=s=>String(s||"").replace(/[\;,]/g,m=>"\\"+m).replace(/\n/g,"\\n");
+  const rr=x.rep?`RRULE:FREQ=${x.rep[0]==="y"?"YEARLY":"MONTHLY"};INTERVAL=${x.rep.slice(1)}\r\n`:"";
+  const desc=[x.a?"Importo: "+eur(x.a):"",x.pb?"Per: "+x.pb:"",x.note||""].filter(Boolean).join("\n");
+  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Casa//Scadenze//IT\r\nBEGIN:VEVENT\r\nUID:${x.id}@casa\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}Z\r\nDTSTART;VALUE=DATE:${d}\r\nDTEND;VALUE=DATE:${e}\r\n${rr}SUMMARY:${esc(x.t)}\r\n${desc?"DESCRIPTION:"+esc(desc)+"\r\n":""}BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(x.t)}\r\nTRIGGER:-P${x.pre??7}DT0H\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+}
+function dlIcs(){
+  const id=S.sheet&&S.sheet.dl,x=id&&(S.dls||{})[id];if(!x)return;
+  const blob=new Blob([icsText({...x,id})],{type:"text/calendar"}),u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download=(x.t||"scadenza").replace(/[^\w\s-]/g,"").trim().replace(/\s+/g,"-")+".ics";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
+}
+function dlGcal(){
+  const id=S.sheet&&S.sheet.dl,x=id&&(S.dls||{})[id];if(!x)return;
+  const p=new URLSearchParams({action:"TEMPLATE",text:x.t,dates:x.d.replace(/-/g,"")+"/"+shiftDay(x.d,1).replace(/-/g,""),details:[x.a?"Importo: "+eur(x.a):"",x.note||""].filter(Boolean).join("\n")});
+  if(x.rep)p.set("recur",`RRULE:FREQ=${x.rep[0]==="y"?"YEARLY":"MONTHLY"};INTERVAL=${x.rep.slice(1)}`);
+  window.open("https://calendar.google.com/calendar/render?"+p.toString(),"_blank","noopener");
+}
+function casaDl(){
+  const l=dls().filter(x=>!x.done).sort((a,b)=>a.d.localeCompare(b.d)).slice(0,3);
+  if(!l.length) return `<p class="hint" style="padding-bottom:4px">Bollo, assicurazioni, revisioni e rinnovi: tocca qui per aggiungerli.</p>`;
+  return l.map(x=>{const n=daysTo(x.d),cls=n<0?"late":n<=(x.pre??7)?"soon":"";return `<div class="kv"><span>${h(x.t)}</span><b class="num dlk ${cls}">${ddmm(x.d)}${x.a?" · "+eur(x.a):""}</b></div>`}).join("");
 }
 function vSoon(k){
   const t={tessere:["Tessere fedeltà","Codici a barre e QR delle vostre tessere, con il logo del negozio o la foto della tessera, pronti alla cassa anche senza rete."],
@@ -2166,7 +2293,7 @@ function render(){
   $(".brand").textContent=sp?"Spese":({casa:"Casa",tessere:"Tessere",scad:"Scadenze",liste:"Liste"}[S.view]||"Casa");
   document.querySelectorAll("nav.tabs [data-nav]").forEach(b=>b.setAttribute("aria-current",(sp?"spese":S.view)===b.dataset.nav?"page":"false"));
   const banner=S.newVer?`<div class="banner" style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between"><span>È disponibile una nuova versione (${h(S.newVer)}).</span><button class="btn" data-act="reload" style="padding:8px 14px">Aggiorna</button></div>`:"";
-  const v={casa:vCasa,tessere:vCards,scad:()=>vSoon("scad"),liste:()=>vSoon("liste"),home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
+  const v={casa:vCasa,tessere:vCards,scad:vDeadlines,liste:()=>vSoon("liste"),home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
   const off=navigator.onLine===false?`<div class="banner" style="margin-top:8px">Senza rete: vedi i dati salvati sul telefono. Le modifiche partono appena torna la connessione.</div>`:"";
   $("#view").innerHTML=off+banner+(sp?spSub():"")+v();
 }
@@ -2222,6 +2349,16 @@ document.addEventListener("click",async e=>{
   else if(act==="settings") openSettings();
   else if(act==="close") closeSheet();
   else if(act==="card-new") cardForm("");
+  else if(act==="dl-new") dlForm("");
+  else if(act==="dl-open") openDl(el.dataset.id);
+  else if(act==="dl-edit") dlForm(S.sheet&&S.sheet.dl);
+  else if(act==="dl-save") saveDl();
+  else if(act==="dl-done") dlDone();
+  else if(act==="dl-undo"){const id=S.sheet&&S.sheet.dl,x=id&&(S.dls||{})[id];if(x){const y={...x};delete y.done;dlWrite(id,y,"Scadenza riaperta")}}
+  else if(act==="dl-ics") dlIcs();
+  else if(act==="dl-gcal") dlGcal();
+  else if(act==="dl-hint"){$("#xt").value=el.dataset.t;$("#xc").value=el.dataset.c;document.querySelectorAll('[data-act="dl-hint"]').forEach(b=>b.setAttribute("aria-pressed",b===el?"true":"false"));$("#xd").focus()}
+  else if(act==="dl-del"){const id=S.sheet&&S.sheet.dlEdit,x=id&&(S.dls||{})[id];if(!x||!confirm("Eliminare la scadenza "+x.t+"?"))return;try{const p=deleteDoc(doc(S.db,"deadlines",id));const m={...S.dls};delete m[id];S.dls=m;closeSheet();render();toast("Scadenza eliminata");await p}catch(err){toast(errMsg(err))}}
   else if(act==="card-open") openCard(el.dataset.id);
   else if(act==="card-edit") cardForm(el.dataset.id);
   else if(act==="card-pb"){S.cardPb=el.dataset.p;render()}
@@ -2469,9 +2606,10 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
   onAuthStateChanged(S.auth,u=>{
     unsubs.forEach(f=>f());unsubs=[];
     S.authed=!!u;S.uid=u?u.email:null;
-    if(!u){S.months={};S.cards={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
+    if(!u){S.months={};S.cards={};S.dls={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
     const denied=err=>{if(err&&err.code==="permission-denied"){S.authMsg="Questo account non è autorizzato a usare l’app.";signOut(S.auth)}else toast("Connessione ai dati persa: ricarica la pagina.")};
     unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes();fixGenius()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"deadlines"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.dls=m;if(S.view==="scad"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"cards"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.cards=m;if(S.view==="tessere"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render();S.loadedSettings=true;migrateFixes()},denied));
     render();
