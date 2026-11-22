@@ -465,7 +465,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "51 · 22/11/2026";
+const APP_VERSION = "52 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1184,6 +1184,15 @@ function spSub(){
   return `<nav class="sub" aria-label="Spese">${[["home","Riepilogo"],["movs","Movimenti"],["cash","Contanti"],["check","Verifiche"],["imp","Importa"]].map(([k,l])=>`<button data-nav="${k}" aria-current="${S.view===k?"page":"false"}">${l}</button>`).join("")}</nav>`;
 }
 function meName(){return payers().find(p=>S.uid&&norm(S.uid).includes(norm(p)))||""}
+// promemoria mensile per importare gli estratti: creato una volta sola per la famiglia
+const IMPORT_EV="ev-import-mensile";
+function seedEvents(){
+  if(!S.loadedSettings||!S.loadedEvs||S.settings.seedImport||S.seeding)return;S.seeding=true;
+  const t=today(),d=t.slice(8,10)<="06"?t.slice(0,8)+"06":addMonthsISO(t.slice(0,8)+"06",1);
+  const ev={t:"Importa gli estratti del mese",d,d2:"",time:"",rep:"m1",who:["Alessandro"],place:"",note:"Scarica i movimenti di UniCredit (conti e carte), Widiba e BBVA del mese appena chiuso e importali da Spese → Importa, così il riepilogo è aggiornato.",hi:false,by:"app"};
+  const p=(S.evs||{})[IMPORT_EV]?Promise.resolve():setDoc(doc(S.db,"events",IMPORT_EV),ev);
+  p.then(()=>saveSettings({seedImport:true})).catch(()=>{}).finally(()=>{S.seeding=false});
+}
 function casaHead(){
   const hr=new Date().getHours(),g=hr>=5&&hr<13?"Buongiorno":hr>=13&&hr<18?"Buon pomeriggio":"Buonasera",me=meName();
   const d0=new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"});
@@ -1597,11 +1606,17 @@ const EV_COL="#7F77DD",EV_HI="#D4537E",DL_COL="#E6A644";
 function evs(){const seen=new Set();return Object.entries(S.evs||{}).map(([id,x])=>({id,...x})).sort((a,b)=>a.id.localeCompare(b.id)).filter(e=>{const k=[norm(e.t),e.d,e.d2||"",e.time||"",e.rep||""].join("|");if(seen.has(k))return false;seen.add(k);return true})}
 function spanDays(a,b){return Math.round((Date.parse(b)-Date.parse(a))/86400000)}
 // inizio di ogni ripetizione di un evento che tocca l'intervallo [from,to]
+// ripetizione degli eventi: w1/w2 = ogni 1 o 2 settimane, m1 = ogni mese, y1 = ogni anno
+const EV_REP={"":"Una volta",w1:"Ogni settimana",w2:"Ogni 2 settimane",m1:"Ogni mese",y1:"Ogni anno"};
+function evStep(e,i){const n=+(e.rep||"x1").slice(1)||1;return e.rep[0]==="w"?shiftDay(e.d,7*n*i):addMonthsISO(e.d,(e.rep[0]==="y"?12:1)*n*i)}
+function evRR(x){if(!x.rep)return "";const n=+x.rep.slice(1)||1;return "RRULE:FREQ="+({w:"WEEKLY",m:"MONTHLY",y:"YEARLY"}[x.rep[0]])+(n>1?";INTERVAL="+n:"")}
 function evOcc(e,from,to){
   const len=e.d2&&e.d2>e.d?spanDays(e.d,e.d2):0,out=[];
   if(!e.rep){const end=shiftDay(e.d,len);if(e.d<=to&&end>=from)out.push(e.d);return out}
-  const y0=+from.slice(0,4)-1,y1=+to.slice(0,4);
-  for(let y=Math.max(y0,+e.d.slice(0,4));y<=y1;y++){const s=addMonthsISO(e.d,(y-+e.d.slice(0,4))*12),end=shiftDay(s,len);if(s<=to&&end>=from)out.push(s)}
+  // si parte poco prima di "from" per non scorrere tutte le ripetizioni dall'inizio
+  const n=+e.rep.slice(1)||1,per=e.rep[0]==="w"?7*n:(e.rep[0]==="y"?365*n:30*n);
+  let i=Math.max(0,Math.floor((spanDays(e.d,from)-len)/per)-2);
+  for(let k=0;k<400;k++,i++){const s=evStep(e,i);if(s>to)break;if(shiftDay(s,len)>=from)out.push(s)}
   return out;
 }
 // tutto quello che cade in un giorno: eventi (anche su più giorni), scadenze aperte e loro ripetizioni, scadenze già pagate
@@ -1620,7 +1635,7 @@ function itemRow(it,withDate){
     <span style="min-width:0"><span class="dlt">${h(x.t)}</span><span class="hint" style="display:block;margin:0">${it.paid?"Pagata il "+ddmm(it.paid.d):it.next?"Prossima ripetizione":"Scadenza"}${x.pb?" · "+h(x.pb):""}</span></span>
     <span class="amt num">${it.paid?eur(it.paid.a||0):x.a?eur(x.a):""}</span></button>`;
   return `<button class="row dlrow" data-act="ev-open" data-id="${h(x.id)}" data-s="${h(it.s)}"><span class="dldate" style="background:${x.hi?EV_HI:EV_COL};color:#fff">${withDate?`<b style="color:#fff">${it.s.slice(8,10)}</b>${new Date(it.s+"T12:00:00").toLocaleDateString("it-IT",{month:"short"})}`:`<b style="color:#fff;font-size:.95rem">${x.time?h(x.time):"★"}</b>`}</span>
-    <span style="min-width:0"><span class="dlt">${h(x.t)}${x.hi?` <span class="evhi">In evidenza</span>`:""}</span><span class="hint" style="display:block;margin:0">${[(x.who||[]).join(", "),x.place,x.d2&&x.d2>x.d?"fino al "+ddmm(shiftDay(it.s,spanDays(x.d,x.d2))):"",x.rep?"ogni anno":""].filter(Boolean).map(h).join(" · ")}</span></span><span></span></button>`;
+    <span style="min-width:0"><span class="dlt">${h(x.t)}${x.hi?` <span class="evhi">In evidenza</span>`:""}</span><span class="hint" style="display:block;margin:0">${[(x.who||[]).join(", "),x.place,x.d2&&x.d2>x.d?"fino al "+ddmm(shiftDay(it.s,spanDays(x.d,x.d2))):"",x.rep?(EV_REP[x.rep]||"").toLowerCase():""].filter(Boolean).map(h).join(" · ")}</span></span><span></span></button>`;
 }
 function vCalendar(){
   const mode=S.calMode==="list"?"list":"cal";
@@ -1635,7 +1650,7 @@ function vCalendar(){
     const multi=i=>i.k==="ev"&&i.x.d2&&i.x.d2>i.x.d;
     const dots=its.filter(i=>!multi(i)).slice(0,3).map(i=>`<i style="background:${i.k==="dl"?(i.paid?"var(--muted)":DL_COL):i.x.hi?EV_HI:EV_COL}"></i>`).join("");
     const bars=its.filter(multi).slice(0,2).map((i,n)=>{const end=shiftDay(i.s,spanDays(i.x.d,i.x.d2));return `<i class="cbar${iso===i.s||(d===1)?" s":""}${iso===end||d===nd?" e":""}" style="background:${i.x.hi?EV_HI:EV_COL};bottom:${3+n*6}px"></i>`}).join("");
-    cells+=`<button class="cday${iso===t?" today":""}${iso===sel?" sel":""}${hi?" hi":""}" data-act="cal-day" data-d="${iso}" aria-label="${d} ${h(title)}${its.length?", "+its.length+" impegni":""}"><span>${d}</span><span class="cdots">${dots}</span>${bars}</button>`;
+    cells+=`<button class="cday${iso===t?" today":""}${iso===sel?" sel":""}${hi?" hi":""}" data-act="cal-day" data-d="${iso}" aria-label="${d} ${h(title)}${its.length?", "+its.length+(its.length===1?" impegno":" impegni"):""}"><span>${d}</span><span class="cdots">${dots}</span>${bars}</button>`;
   }
   const dayList=sel?`<section class="block"><h2 style="display:flex;justify-content:space-between;align-items:center">${h(new Date(sel+"T12:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"}))}<button class="link" data-act="cal-add" data-d="${sel}" style="font-size:.9rem">+ Aggiungi</button></h2>
       ${dayItems(sel).map(itemRow).join("")||`<p class="hint" style="padding-bottom:8px">Niente in questo giorno.</p>`}<div style="height:4px"></div></section>`:"";
@@ -1670,7 +1685,7 @@ function evForm(id,d){
     <div class="two"><div class="field" style="margin-top:0"><label for="ed">Giorno</label>${dateInput("ed",x.d||"","Giorno")}</div>
       <div class="field" style="margin-top:0"><label for="eh">Ora (facoltativa)</label><input id="eh" value="${h(x.time||"")}" placeholder="16:30" inputmode="numeric" autocomplete="off"></div></div>
     <div class="two"><div class="field" style="margin-top:0"><label for="ed2">Fino al (se dura più giorni)</label>${dateInput("ed2",x.d2||"","Fino al")}</div>
-      <div class="field" style="margin-top:0"><label for="er">Si ripete</label><select id="er">${opt("","Una volta",x.rep||"")}${opt("y1","Ogni anno (compleanni…)",x.rep||"")}</select></div></div>
+      <div class="field" style="margin-top:0"><label for="er">Si ripete</label><select id="er">${Object.entries(EV_REP).map(([k,l])=>opt(k,k==="y1"?"Ogni anno (compleanni…)":l,x.rep||"")).join("")}</select></div></div>
     <div class="field"><span class="lab">Chi partecipa</span><div class="chips">${members().map(m=>`<button class="chip" data-act="ev-who" data-m="${h(m)}" aria-pressed="${(x.who||[]).includes(m)}">${h(m)}</button>`).join("")}</div></div>
     <div class="field"><label for="ep">Dove</label><input id="ep" value="${h(x.place||"")}" autocomplete="off"></div>
     <div class="field"><label for="en">Note</label><input id="en" value="${h(x.note||"")}" placeholder="regalo, abbigliamento, chi porta cosa…" autocomplete="off"></div>
@@ -1691,10 +1706,11 @@ async function saveEv(){
 function openEv(id,s){
   const x=(S.evs||{})[id];if(!x)return;s=s||x.d;S.sheet={ev:id,s};
   const end=x.d2&&x.d2>x.d?shiftDay(s,spanDays(x.d,x.d2)):"";
-  openSheet(`<h3>${h(x.t)}</h3><div class="sub">${h(new Date(s+"T12:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long",year:"numeric"}))}${end?" – "+itDate(end):""}${x.time?" · ore "+h(x.time):""}${x.rep?" · ogni anno":""}</div>
+  openSheet(`<h3>${h(x.t)}</h3><div class="sub">${h(new Date(s+"T12:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long",year:"numeric"}))}${end?" – "+itDate(end):""}${x.time?" · ore "+h(x.time):""}${x.rep?" · "+(EV_REP[x.rep]||"").toLowerCase():""}</div>
     ${x.hi?`<p><span class="evhi">In evidenza</span></p>`:""}
     ${(x.who||[]).length?`<p style="margin:8px 0"><b>Partecipano:</b> ${h(x.who.join(", "))}</p>`:""}${x.place?`<p style="margin:8px 0"><b>Dove:</b> ${h(x.place)}</p>`:""}${x.note?`<p style="margin:8px 0">${h(x.note)}</p>`:""}
-    <div class="btns"><button class="btn ghost" data-act="ev-edit" style="flex:1">Modifica</button><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>
+    ${id===IMPORT_EV?`<div class="btns"><button class="btn" data-act="go-imp" style="flex:1">Vai a Importa</button></div>`:""}
+    <div class="btns"><button class="btn ghost" data-act="ev-edit" style="flex:1">Modifica</button><button class="btn ${id===IMPORT_EV?"ghost":""}" data-act="close" style="flex:1">Chiudi</button></div>
     <div class="field"><span class="lab">Aggiungi al calendario</span>
       <div class="btns" style="margin:0"><button class="btn ghost" data-act="ev-ics" style="flex:1">Calendario del telefono</button><button class="btn ghost" data-act="ev-gcal" style="flex:1">Google Calendar</button></div></div>`);
 }
@@ -1707,14 +1723,14 @@ function evIcs(){
   const id=S.sheet&&S.sheet.ev,x=id&&(S.evs||{})[id];if(!x)return;
   const esc=s=>String(s||"").replace(/[\;,]/g,m=>"\\"+m).replace(/\n/g,"\\n"),D=evDates(x);
   const desc=[(x.who||[]).length?"Partecipano: "+x.who.join(", "):"",x.note||""].filter(Boolean).join("\n");
-  const txt=`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Casa//Calendario//IT\r\nBEGIN:VEVENT\r\nUID:${id}@casa\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}Z\r\n${D.allDay?`DTSTART;VALUE=DATE:${D.st}\r\nDTEND;VALUE=DATE:${D.et}`:`DTSTART:${D.st}\r\nDTEND:${D.et}`}\r\n${x.rep?"RRULE:FREQ=YEARLY\r\n":""}SUMMARY:${esc(x.t)}\r\n${x.place?"LOCATION:"+esc(x.place)+"\r\n":""}${desc?"DESCRIPTION:"+esc(desc)+"\r\n":""}BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(x.t)}\r\nTRIGGER:${x.hi?"-P7D":"-P1D"}\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  const txt=`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Casa//Calendario//IT\r\nBEGIN:VEVENT\r\nUID:${id}@casa\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}Z\r\n${D.allDay?`DTSTART;VALUE=DATE:${D.st}\r\nDTEND;VALUE=DATE:${D.et}`:`DTSTART:${D.st}\r\nDTEND:${D.et}`}\r\n${x.rep?evRR(x)+"\r\n":""}SUMMARY:${esc(x.t)}\r\n${x.place?"LOCATION:"+esc(x.place)+"\r\n":""}${desc?"DESCRIPTION:"+esc(desc)+"\r\n":""}BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(x.t)}\r\nTRIGGER:${x.hi?"-P7D":"-P1D"}\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
   const u=URL.createObjectURL(new Blob([txt],{type:"text/calendar"})),a=document.createElement("a");
   a.href=u;a.download=(x.t||"evento").replace(/[^\w\s-]/g,"").trim().replace(/\s+/g,"-")+".ics";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
 }
 function evGcal(){
   const id=S.sheet&&S.sheet.ev,x=id&&(S.evs||{})[id];if(!x)return;const D=evDates(x);
   const p=new URLSearchParams({action:"TEMPLATE",text:x.t,dates:D.st+"/"+D.et,details:[(x.who||[]).length?"Partecipano: "+x.who.join(", "):"",x.note||""].filter(Boolean).join("\n"),location:x.place||""});
-  if(!D.allDay)p.set("ctz","Europe/Rome");if(x.rep)p.set("recur","RRULE:FREQ=YEARLY");
+  if(!D.allDay)p.set("ctz","Europe/Rome");if(x.rep)p.set("recur",evRR(x));
   window.open("https://calendar.google.com/calendar/render?"+p.toString(),"_blank","noopener");
 }
 // Casa: prossimi impegni (eventi in evidenza dei prossimi 90 giorni, poi tutto il resto in ordine di data)
@@ -2746,6 +2762,7 @@ document.addEventListener("click",async e=>{
   else if(act==="cal-day"){S.calDay=S.calDay===el.dataset.d?"":el.dataset.d;render()}
   else if(act==="cal-add") calAdd(el.dataset.d||"");
   else if(act==="ev-new") evForm("",el.dataset.d||"");
+  else if(act==="go-imp"){closeSheet();S.view="imp";render();window.scrollTo(0,0)}
   else if(act==="ev-open") openEv(el.dataset.id,el.dataset.s);
   else if(act==="ev-edit") evForm(S.sheet&&S.sheet.ev);
   else if(act==="ev-save") saveEv();
@@ -3023,10 +3040,10 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
     unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes();fixGenius()},denied));
     unsubs.push(onSnapshot(collection(S.db,"items"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.items=m;if(!paintList()&&S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"lists"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.lists=m;if(!paintList()&&S.view==="casa")render()},denied));
-    unsubs.push(onSnapshot(collection(S.db,"events"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.evs=m;if(S.view==="scad"||S.view==="casa")render()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"events"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.evs=m;S.loadedEvs=true;seedEvents();if(S.view==="scad"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"deadlines"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.dls=m;if(S.view==="scad"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"cards"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.cards=m;if(S.view==="tessere"||S.view==="casa")render()},denied));
-    unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render();S.loadedSettings=true;migrateFixes()},denied));
+    unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render();S.loadedSettings=true;migrateFixes();seedEvents()},denied));
     render();
   });
 })();
