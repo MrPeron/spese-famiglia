@@ -383,7 +383,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "48 · 22/11/2026";
+const APP_VERSION = "49 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1414,17 +1414,21 @@ function casaDl(){
 }
 // ---------- Liste condivise (spesa e altre): voci divise per reparto, aggiornate in tempo reale ----------
 const REPARTI=[
-  ["Frutta e verdura","mela mele pera pere banan aranc limon mandarin clementin kiwi uva fragol pesche albicocc ciliegi anguri melon frutta verdur insalat lattug rucola pomodor zucchin carot patat cipoll aglio peperon melanzan spinac bietol broccol cavol finocch funghi avocado sedano basilico prezzemol porri asparag carciof zucca"],
-  ["Pane e colazione","pane panini piadin grissin cracker fette biscott cereali muesli merendin brioche cornett croissant marmellat nutella miele caffe caffè cialde capsule te tè the tisan fette_biscottate"],
-  ["Latticini e uova","latte yogurt mozzarell formagg parmigian grana burro panna uova uovo ricotta stracchino mascarpone scamorza philadelphia crescenza gorgonzola emmental fontina provola"],
-  ["Carne e pesce","pollo tacchino manzo maiale vitello salsicc hamburger carne macinat prosciutt salame mortadell bresaola speck wurstel affettat cotolett petto fesa pesce salmone merluzz gamber cozze vongol orata branzin seppi calamar polpo"],
-  ["Dispensa","pasta spaghett penne fusilli rigaton farfalle riso farina zucchero sale olio aceto passata pelati polpa tonno legumi ceci fagioli lenticch piselli mais sugo pesto maionese ketchup senape spezie brodo dado cioccolat patatine lievito pangrattato cacao noci mandorle"],
-  ["Surgelati","surgel gelat bastoncini sofficini frozen"],
-  ["Bevande","acqua vino birra succo succhi coca aranciata bibit spumante prosecco tonica"],
-  ["Casa e igiene","detersiv sapone shampoo balsamo bagnoschiuma dentifric spazzolin carta scottex tovagliol sacchetti sacchi spugn ammorbident candeggin brillantant pellicol alluminio deodorant assorbent cotton rasoi lampadin pile batterie anticalcare sgrassator"],
-  ["Bambini","pannolin salviett omogeneizz biberon pappa"]
-].map(([n,w])=>[n,w.split(" ").map(x=>x.replace("_"," "))]);
-function reparto(t){const w=norm(t).split(/[^a-z0-9]+/).filter(Boolean),txt=" "+w.join(" ")+" ";for(const [n,keys] of REPARTI)for(const k of keys){if(k.includes(" ")?txt.includes(" "+k):w.some(x=>k.length<=3?x===k:x.startsWith(k)))return n}return "Altro"}
+  ["Fresco","latte yogurt mozzarell formagg parmigian grana burro panna uova uovo ricotta stracchino mascarpone scamorza philadelphia crescenza gorgonzola emmental fontina provola besciamella "
+    +"pollo tacchino manzo maiale vitello salsicc hamburger carne macinat prosciutt salame mortadell bresaola speck wurstel affettat cotolett petto fesa pancetta pesce salmone merluzz gamber cozze vongol orata branzin seppi calamar polpo "
+    +"surgel gelat bastoncini sofficini frozen ghiaccio piselli_surgelati pasta_fresca gnocchi tortellini ravioli piadin pizza_fresca lievito_di_birra "
+    +"mela mele pera pere banan aranc limon mandarin clementin kiwi uva fragol pesche albicocc ciliegi anguri melon frutta verdur insalat lattug rucola pomodor zucchin carot patat cipoll aglio peperon melanzan spinac bietol broccol cavol finocch funghi avocado sedano basilico prezzemol porri asparag carciof zucca"],
+  ["Dispensa","pasta spaghett penne fusilli rigaton farfalle riso farina zucchero sale olio aceto passata pelati polpa tonno legumi ceci fagioli lenticch piselli mais sugo pesto maionese ketchup senape spezie brodo dado cioccolat patatine lievito pangrattato cacao noci mandorle "
+    +"pane panini grissin cracker fette biscott cereali muesli merendin brioche cornett croissant marmellat nutella miele caffe caffè cialde capsule te tè the tisan fette_biscottate "
+    +"acqua vino birra succo succhi coca aranciata bibit spumante prosecco tonica omogeneizz pappa"],
+  ["Pulizia","detersiv ammorbident candeggin brillantant anticalcare sgrassator sgrassatore spugn panno_microfibra panni_microfibra stracci scottex carta carta_cucina tovagliol sacchetti sacchi pellicol alluminio piatti lavastoviglie lavatrice pastiglie detergente vetri pavimenti mocio scopa guanti insetticid deodorante_ambiente"],
+  ["Bagno","shampoo balsamo bagnoschiuma doccia sapone saponetta dentifric spazzolin collutorio filo_interdentale carta_igienica deodorant assorbent tampon cotton dischetti crema rasoi lamette schiuma_da_barba cerotti pannolin salviett profum lacca gel trucco struccante"]
+].map(([n,w])=>[n,w.split(" ").filter(Boolean).map(x=>x.replace(/_/g," "))]);
+// prima le parole composte (carta igienica → Bagno, prima di carta → Pulizia), poi quelle singole, nell'ordine dei reparti
+function reparto(t){const w=norm(t).split(/[^a-z0-9]+/).filter(Boolean),txt=" "+w.join(" ")+" ";
+  for(const [n,keys] of REPARTI)for(const k of keys)if(k.includes(" ")&&txt.includes(" "+k))return n;
+  for(const [n,keys] of REPARTI)for(const k of keys)if(!k.includes(" ")&&w.some(x=>k.length<=3?x===k:x.startsWith(k)))return n;
+  return "Altro"}
 function lists(){const l=Object.entries(S.lists||{}).map(([id,x])=>({id,...x})).filter(x=>!x.del).sort((a,b)=>(a.o||0)-(b.o||0)||(a.n||"").localeCompare(b.n||""));if(!l.some(x=>x.id==="spesa"))l.unshift({id:"spesa",n:"Spesa",o:-1});return l}
 function curList(){const l=lists();return l.find(x=>x.id===S.listId)||l[0]}
 function items(lid){return Object.entries(S.items||{}).map(([id,x])=>({id,...x})).filter(x=>x.l===lid)}
