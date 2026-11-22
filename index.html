@@ -503,7 +503,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "58 · 22/11/2026";
+const APP_VERSION = "59 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1867,7 +1867,9 @@ function budId(y,sc){return (y||budYear())+"-"+(sc||budScope())}
 function budDoc(y,sc){return (S.bud||{})[budId(y,sc)]||{}}
 function budRowsRaw(y,sc){return Object.entries(budDoc(y,sc).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
 function budRows(y,sc){return budRowsRaw(y,sc)}
-function rowAct(act,r){return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
+function rowAct(act,r,rows){
+  if(r.src==="in:other"&&rows){const own=new Set(rows.map(x=>x.src));const a=Array(12).fill(0);let any=false;for(const [k,v] of Object.entries(act))if(k.startsWith("in:")&&!k.startsWith("in:vers:")&&k!=="in:casa"&&!own.has(k)){any=true;v.forEach((x,i)=>a[i]+=x)}return any?a:null}
+  return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
 // ultimo mese con movimenti importati (quindi con consuntivo affidabile)
 function lastDataYm(){const b=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,"");return b?ymOf(b):""}
 function dlPaidIds(){const s=new Set();for(const x of dls())for(const p of x.paid||[])if(p.tx)s.add(p.tx);return s}
@@ -1892,7 +1894,16 @@ function budKey(t,C){
     if(ca.pb===JOINT&&ruolo(c.acc)==="corrente")return ["casa",-t.a];
     return null;
   }
-  if(t.k==="entrata"){if(isPatr(t))return null;return [C.fam?"in:casa":"in",t.a]}
+  if(t.k==="entrata"){
+    if(isPatr(t))return null;
+    // un rimborso abbinato riduce la spesa a cui si riferisce
+    if(isRefund(t)){const e=refOf(t.rif[0]);return ["cat:"+((e&&e.c)||t.c||"altro"),-t.a]}
+    // soldi da un altro conto vostro: non sono entrate (dai risparmi = risparmio ripreso)
+    const c=counterpart(t)||pCounter(t,C.patr),ca=c&&conti()[c.acc];
+    if(ca){if(C.patr.has(c.acc))return ["sav",-t.a];if(C.fam&&payers().includes(ca.pb))return ["in:vers:"+ca.pb,t.a];return null}
+    if(ownName(t.m||""))return ["sav",-t.a];
+    return [C.fam?"in:casa":"in:"+incKey(t),t.a];
+  }
   if(t.k!=="spesa"||t.s===CASH||isPatrCost(t)||paidByPatr(t))return null;
   // soldi spostati verso i risparmi (anche se letti come spesa) non sono spese del budget
   if(isPatr(t)||pCounter(t,C.patr))return ["sav",-t.a];
@@ -1900,6 +1911,10 @@ function budKey(t,C){
   if(spType(t)==="straordinaria")return ["extra:stra",-t.a];
   return ["cat:"+(t.c||"altro"),-t.a];
 }
+// chiave dell'entrata: le parole significative della descrizione (via "bonifico", "accredito", "da"…), così lo stipendio sta insieme
+const INC_STOP=new Set(["bonifico","bonifici","sepa","sct","accredito","accr","da","a","di","del","della","per","favore","vostro","vs","istantaneo","ordinante","ord","disposto","in","entrata","ricevuto","giroconto","pagamento","rif","inc","cro","trn","sdd","bon","b","spa","s","p","srl","s.p.a"]);
+function incKey(t){const w=norm(t.m||t.x||"").replace(/[^a-z ]/g," ").split(" ").filter(x=>x.length>1&&!INC_STOP.has(x));return w.slice(0,2).join(" ")||"altro"}
+function incLabel(k){return k.replace(/\b\w/g,c=>c.toUpperCase())}
 function budPropose(y,sc){
   const last=lastDataYm(),cur=ymOf(today());if(!last)return null;
   const to=last<cur?last:shiftYM(cur,-1),first=ymOf(S.all.filter(t=>t.s!==CASH).reduce((m,t)=>!m||t.d<m?t.d:m,""));
@@ -1911,7 +1926,17 @@ function budPropose(y,sc){
   if(C.fam){
     for(const p of payers())if(acc["in:vers:"+p]>5)rows["in-"+hash(p)]={t:"Versamento di "+p,k:"in",src:"in:vers:"+p,m:eq(acc["in:vers:"+p])};
     if(acc["in:casa"]>5)rows["in-casa"]={t:"Altre entrate del conto di casa",k:"in",src:"in:casa",m:eq(acc["in:casa"])};
-  }else if(acc.in>5)rows["in"]={t:"Stipendio e altre entrate",k:"in",src:"in",m:eq(acc.in)};
+  }else{
+    // entrate ricorrenti (presenti in almeno metà dei mesi): una voce ciascuna; con 12 mesi si tiene l'importo mese per mese (tredicesima…)
+    const byK={};for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>to)continue;const r=budKey(t,C);if(!r||!r[0].startsWith("in:"))continue;
+      const b=byK[r[0]]||(byK[r[0]]={tot:0,ms:new Set(),mo:Array(12).fill(0)});b.tot+=r[1];b.ms.add(ym);b.mo[+ym.slice(5,7)-1]+=r[1]}
+    const seas=n>=12,other=Array(12).fill(0);let oth=0;
+    for(const [k,b] of Object.entries(byK).sort((a,b)=>b[1].tot-a[1].tot)){
+      if(b.ms.size>=Math.max(3,Math.ceil(n/2))&&b.tot/n>20)rows["in-"+hash(k)]={t:incLabel(k.slice(3)),k:"in",src:k,m:seas?b.mo.map(Math.round):Array(12).fill(Math.round(b.tot/n))};
+      else{oth+=b.tot;b.mo.forEach((v,i)=>other[i]+=v)}
+    }
+    if(oth/n>5)rows["in-other"]={t:"Entrate occasionali (premi, vendite, altro)",k:"in",src:"in:other",m:seas?other.map(Math.round):Array(12).fill(Math.round(oth/n))};
+  }
   for(const [id,nm] of CATS)if(acc["cat:"+id]>5){const fx=FIX_CATS.has(id)||catType(id)==="fissa"||(fixA["cat:"+id]||0)>acc["cat:"+id]*0.5?"fissa":"variabile";rows["c-"+id]={t:nm,k:"out",s:"cat",c:id,fx,src:"cat:"+id,m:eq(acc["cat:"+id])}}
   if(!C.fam&&acc.casa>5)rows["casa"]={t:"Versamento al conto di casa",k:"out",s:"casa",fx:"fissa",src:"casa",m:eq(acc.casa)};
   if(acc["extra:stra"]>5)rows["x-stra"]={t:"Spese straordinarie (riserva)",k:"out",s:"extra",fx:"variabile",src:"extra:stra",m:eq(acc["extra:stra"])};
@@ -1943,7 +1968,7 @@ function vBudget(){
     <p>Il budget ${what}, mese per mese. ${ed?"La proposta parte dalle medie degli ultimi 12 mesi importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
     ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}</section>`;
   const act=budActual(y,sc),done=budMonthsDone(y),val=r=>sel==null?sumArr(r.m):r.m[sel];
-  const actOf=r=>{const a=rowAct(act,r);if(!a)return null;if(sel==null)return done?sumArr(a.slice(0,done)):null;return sel<done?a[sel]:null};
+  const actOf=r=>{const a=rowAct(act,r,rows);if(!a)return null;if(sel==null)return done?sumArr(a.slice(0,done)):null;return sel<done?a[sel]:null};
   const gt=(g,f)=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+f(r),0),I=gt("in",val),F=gt("fix",val),R_=gt("sav",val),V=gt("var",val),D=I-F-R_,Mg=D-V;
   const marg=Array.from({length:12},(_,i)=>gt("in",r=>r.m[i])-gt("fix",r=>r.m[i])-gt("sav",r=>r.m[i])-gt("var",r=>r.m[i])),mx=Math.max(1,...marg.map(Math.abs));
   const chips=`<div class="chips budm">${[["","Anno"],...MESI.map((m,i)=>[String(i),m])].map(([v,l])=>`<button class="chip" data-act="bud-m" data-m="${v}" aria-pressed="${String(M)===v}">${l}</button>`).join("")}</div>`;
@@ -1985,7 +2010,19 @@ function budRowForm(id){
       <div class="two" style="margin-bottom:8px"><input id="btot" inputmode="decimal" placeholder="Totale anno" value="${sumArr(r.m)?fmtNum(sumArr(r.m)):""}"><button class="btn ghost" data-act="bud-eq">Dividi in 12</button></div>
       <div class="budin">${r.m.map((v,i)=>`<label><span>${MESI[i]}</span><input id="bm${i}" inputmode="decimal" value="${v?fmtNum(v):""}" placeholder="0"></label>`).join("")}</div>
       <p class="hint">Scrivi il totale e tocca «Dividi in 12», oppure metti gli importi nei mesi giusti (es. tredicesima a dicembre, vacanze ad agosto).</p></div>
+    ${r.src?budSources(sc,r):""}
     <div class="btns"><button class="btn" data-act="bud-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="bud-del">Elimina</button>`:""}</div>`);
+}
+// da dove viene la cifra proposta: i movimenti degli ultimi 12 mesi che finiscono in questa voce, raggruppati per descrizione
+function budSources(sc,r){
+  const last=lastDataYm();if(!last)return "";const from=shiftYM(last,-11),C=budCtx(sc),own=new Set(budRowsRaw(budYear(),sc).map(x=>x.src)),g={};
+  for(const t of S.all){const ym=ymOf(t.d);if(ym<from||ym>last)continue;const k=budKey(t,C);if(!k)continue;
+    const hit=r.src==="in:other"?(k[0].startsWith("in:")&&!k[0].startsWith("in:vers:")&&k[0]!=="in:casa"&&!own.has(k[0])):(k[0]===r.src||(r.dl&&k[0].startsWith("dl:")&&((dls().find(x=>x.id===r.dl)||{}).paid||[]).some(p=>p.tx===t.id)));if(!hit)continue;
+    const d=(t.n||t.m||t.x||"").trim().slice(0,48),x=g[d]||(g[d]={v:0,c:0});x.v+=k[1];x.c++}
+  const l=Object.entries(g).sort((a,b)=>Math.abs(b[1].v)-Math.abs(a[1].v));if(!l.length)return "";
+  return `<details class="field"><summary class="link">Da dove viene (ultimi 12 mesi, ${l.length} ${l.length===1?"descrizione":"descrizioni"})</summary>
+    <div class="rules" style="margin-top:8px">${l.slice(0,25).map(([d,x])=>`<div><span>${h(d)} <span class="hint" style="margin:0">× ${x.c}</span></span><span class="num">${eur(x.v)}</span></div>`).join("")}</div>
+    <p class="hint">Se qualcosa non c'entra (un rimborso, un giroconto da un tuo conto), correggi il tipo di quel movimento in Movimenti e poi rifai la proposta.</p></details>`;
 }
 async function budSaveRow(){
   const sh=S.sheet;if(!sh||!sh.budRow)return;const y=budYear(),sc=budScope();
@@ -2020,7 +2057,7 @@ function budXlsx(){
   const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:34},{wch:22},{wch:22},...MESI.map(()=>({wch:10})),{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,"Budget "+y);
   if(done){const a2=[["Consuntivo "+y+" · "+sc+" (mesi importati)"],[],["Voce",...MESI.slice(0,done),"Totale reale","Budget stessi mesi","Differenza"]];
-    for(const r of rows){const a=(rowAct(act,r)||Array(12).fill(0)).slice(0,done),b=sumArr(r.m.slice(0,done));a2.push([r.t,...a,sumArr(a),b,sumArr(a)-b])}
+    for(const r of rows){const a=(rowAct(act,r,rows)||Array(12).fill(0)).slice(0,done),b=sumArr(r.m.slice(0,done));a2.push([r.t,...a,sumArr(a),b,sumArr(a)-b])}
     const w2=XLSX.utils.aoa_to_sheet(a2);w2["!cols"]=[{wch:34},...MESI.slice(0,done).map(()=>({wch:10})),{wch:12},{wch:14},{wch:12}];XLSX.utils.book_append_sheet(wb,w2,"Consuntivo")}
   XLSX.writeFile(wb,"Budget "+y+" "+sc+".xlsx");
 }
