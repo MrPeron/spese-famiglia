@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Spese di famiglia</title>
+<title>Casa Peron</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Spese">
+<meta name="apple-mobile-web-app-title" content="Casa">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="manifest" href="manifest.json">
@@ -331,7 +331,7 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 </head>
 <body>
 <header class="top">
-  <div class="brand">Spese di famiglia</div>
+  <div class="brand">Casa</div>
   <div class="month" id="monthbox">
     <button data-act="prevm" aria-label="Periodo precedente">‹</button>
     <button id="mlabel" class="plab" data-act="period" aria-label="Scegli il periodo"></button>
@@ -362,7 +362,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "43 · 22/11/2026";
+const APP_VERSION = "44 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -2342,7 +2342,7 @@ async function exportCSV(scope){
 // ---------- Render ----------
 function isEditing(){const a=document.activeElement;return a&&$("#view").contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.type!=="checkbox"&&a.type!=="file"}
 function vLogin(){return `<section class="empty">
-  <h1>Spese di famiglia</h1>
+  <h1>Casa Peron</h1>
   <p>Accedi con la tua email e la password.</p>
   <div class="field"><label for="le">Email</label><input type="email" id="le" autocomplete="username" value="${h(S.loginEmail||"")}"></div>
   <div class="field"><label for="lp">Password</label><input type="password" id="lp" autocomplete="current-password"></div>
