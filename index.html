@@ -99,6 +99,10 @@ nav.sub button[aria-current="page"]{background:var(--primary);border-color:var(-
 #ccode>svg:not([id]){width:min(240px,70vw);height:auto}
 .cnum{font:600 1.05rem/1.3 ui-monospace,Menlo,monospace;letter-spacing:.08em;margin-top:10px;word-break:break-all}
 .kimg{display:flex;gap:12px;align-items:flex-start}
+.cfav{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font:700 .8rem/1 var(--display)}
+.cfav.big{width:64px;height:64px;flex:0 0 64px;font-size:1.3rem}
+.cfnum{font:600 .86rem/1.2 ui-monospace,Menlo,monospace;letter-spacing:.03em;color:var(--muted)}
+.cnum.cfbig{font-size:1.25rem;letter-spacing:.1em;user-select:all;-webkit-user-select:all}
 .liadd{display:flex;gap:8px}
 .liadd input{flex:1;min-width:0;min-height:44px}
 .liadd .btn{padding:10px 14px}
@@ -379,7 +383,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "47 · 22/11/2026";
+const APP_VERSION = "48 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1157,30 +1161,57 @@ function drawCode(c){
     if(c.f==="QR"){if(!window.qrcode)throw 0;const q=qrcode(0,"M");q.addData(num);q.make();box.innerHTML=q.createSvgTag({cellSize:7,margin:2,scalable:true});return}
     if(!window.JsBarcode)throw 0;
     box.innerHTML=`<svg id="cbar"></svg>`;
-    try{JsBarcode("#cbar",num,{format:c.f||guessFmt(num),displayValue:false,height:110,margin:0,width:2.4,background:"#ffffff",lineColor:"#000000"})}
+    try{JsBarcode("#cbar",num,{format:c.f||guessFmt(num),displayValue:false,height:c.f==="CODE39"?90:110,margin:0,width:c.f==="CODE39"?1.4:2.4,background:"#ffffff",lineColor:"#000000"})}
     catch(e){JsBarcode("#cbar",num,{format:"CODE128",displayValue:false,height:110,margin:0,width:2.2,background:"#ffffff",lineColor:"#000000"})}
   }catch(e){box.innerHTML=`<p class="hint">Codice non disponibile senza rete la prima volta: riapri l'app con la connessione.</p>`}
 }
 function vCards(){
-  const all=cards(),own=[...new Set(all.map(c=>c.pb).filter(Boolean))];
+  const cfs=cards().filter(c=>c.k==="cf").sort((a,b)=>members().indexOf(a.pb)-members().indexOf(b.pb));
+  const cfBlock=`<section class="block"><h2 style="display:flex;justify-content:space-between;align-items:center">Codici fiscali<button class="link" data-act="cf-new" style="font-size:.9rem">+ Aggiungi</button></h2>
+    ${cfs.length?cfs.map(c=>`<button class="row" data-act="card-open" data-id="${h(c.id)}" style="grid-template-columns:34px 1fr auto"><span class="cfav" style="background:${cardCol({n:c.pb})}">${h(initials(c.pb))}</span><span>${h(c.pb||"")}</span><span class="cfnum">${h(cfFmt(c.num))}</span></button>`).join("")
+      :`<p class="hint" style="padding-bottom:10px">Il codice fiscale di ognuno, con il codice a barre della tessera sanitaria: si mostra in farmacia e si copia al volo nei moduli.</p>`}<div style="height:4px"></div></section>`;
+  const all=cards().filter(c=>c.k!=="cf"),own=[...new Set(all.map(c=>c.pb).filter(Boolean))];
   const f=S.cardPb&&own.includes(S.cardPb)?S.cardPb:"";
   const list=all.filter(c=>!f||c.pb===f).sort((a,b)=>(b.u||"").localeCompare(a.u||"")||(a.n||"").localeCompare(b.n||""));
   if(!all.length) return `<section class="empty"><h1>Le tessere fedeltà, sempre in tasca.</h1>
     <p>Aggiungi le tessere di tutta la famiglia: alla cassa apri quella giusta e mostri il codice a barre o il QR. Funziona anche senza rete.</p>
-    <div class="btns"><button class="btn" data-act="card-new">Aggiungi una tessera</button></div></section>`;
+    <div class="btns"><button class="btn" data-act="card-new">Aggiungi una tessera</button></div></section>`+cfBlock;
   return `<div class="btns" style="margin:10px 0 4px;align-items:center;justify-content:space-between">
       ${own.length>1?`<div class="chips">${["",...own].map(p=>`<button class="chip" data-act="card-pb" data-p="${h(p)}" aria-pressed="${p===f}">${h(p||"Tutte")}</button>`).join("")}</div>`:"<span></span>"}
       <button class="btn" data-act="card-new" style="padding:9px 14px">+ Aggiungi</button></div>
-    <div class="cgrid">${list.map(c=>`<button class="ctile" data-act="card-open" data-id="${h(c.id)}">${cardFace(c)}<b>${h(c.n||"Tessera")}</b><span>${h(c.pb||"")}</span></button>`).join("")}</div>`;
+    <div class="cgrid">${list.map(c=>`<button class="ctile" data-act="card-open" data-id="${h(c.id)}">${cardFace(c)}<b>${h(c.n||"Tessera")}</b><span>${h(c.pb||"")}</span></button>`).join("")}</div>`+cfBlock;
+}
+// Codice fiscale: formato, carattere di controllo (lettere per omocodia ammesse) e scrittura a gruppi
+const RE_CF=/^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-EHLMPR-T][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/;
+function cfOk(cf){
+  if(!RE_CF.test(cf))return false;
+  const odd={0:1,1:0,2:5,3:7,4:9,5:13,6:15,7:17,8:19,9:21,A:1,B:0,C:5,D:7,E:9,F:13,G:15,H:17,I:19,J:21,K:2,L:4,M:18,N:20,O:11,P:3,Q:6,R:8,S:12,T:14,U:16,V:10,W:22,X:25,Y:24,Z:23};
+  let sum=0;for(let i=0;i<15;i++){const ch=cf[i];sum+=i%2===0?odd[ch]:(/\d/.test(ch)?+ch:ch.charCodeAt(0)-65)}
+  return String.fromCharCode(65+sum%26)===cf[15];
+}
+function cfFmt(cf){cf=cf||"";return cf.length===16?cf.slice(0,3)+" "+cf.slice(3,6)+" "+cf.slice(6,11)+" "+cf.slice(11):cf}
+function cfForm(id){
+  const c=id?(S.cards||{})[id]||{}:{};const taken=new Set(cards().filter(x=>x.k==="cf"&&x.id!==id).map(x=>x.pb));
+  const who=members().filter(m=>m!==famName()),def=c.pb||who.find(m=>!taken.has(m))||who[0];
+  S.sheet={cardEdit:id||"new",cf:true};
+  openSheet(`<h3>${id?"Modifica codice fiscale":"Nuovo codice fiscale"}</h3>
+    <div class="field"><label for="kpb">Di chi è</label><select id="kpb">${who.map(m=>`<option value="${h(m)}"${m===def?" selected":""}>${h(m)}${taken.has(m)?" (già inserito)":""}</option>`).join("")}</select></div>
+    <div class="field"><label for="knum">Codice fiscale</label><input id="knum" value="${h(c.num||"")}" placeholder="RSSMRA80A01F205X" autocapitalize="characters" autocomplete="off" spellcheck="false" style="text-transform:uppercase;font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em">
+      <div class="btns" style="margin:8px 0 0"><button class="btn ghost" data-act="card-scan" style="flex:1">Leggi dalla tessera sanitaria</button></div>
+      <input type="file" id="kscan" accept="image/*" capture="environment" hidden><select id="kf" hidden><option value="CODE39" selected></option></select>
+      <p class="hint" id="kmsg">Fotografa il codice a barre sul retro della tessera sanitaria, oppure scrivilo: controllo che sia corretto.</p></div>
+    <div class="btns"><button class="btn" data-act="card-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="card-del" data-id="${h(id)}">Elimina</button>`:""}</div>`);
 }
 function openCard(id){
   const c=(S.cards||{})[id];if(!c)return;
   S.sheet={card:id};
-  openSheet(`<div class="chead">${cardFace(c)}<div><h3>${h(c.n||"Tessera")}</h3><div class="sub">${h(c.pb||"")}${c.f?" · "+h(BC_FMT[c.f]||c.f):""}</div></div></div>
-    <div class="cpanel"><div id="ccode"></div><div class="cnum">${h((c.num||"").replace(/(.{4})(?=.)/g,"$1 "))}</div></div>
+  const cf=c.k==="cf";
+  openSheet(`<div class="chead">${cf?`<span class="cfav big" style="background:${cardCol({n:c.pb})}">${h(initials(c.pb))}</span>`:cardFace(c)}<div><h3>${cf?"Codice fiscale":h(c.n||"Tessera")}</h3><div class="sub">${h(c.pb||"")}${!cf&&c.f?" · "+h(BC_FMT[c.f]||c.f):""}</div></div></div>
+    <div class="cpanel"><div id="ccode"></div><div class="cnum${cf?" cfbig":""}">${h(cf?cfFmt(c.num):(c.num||"").replace(/(.{4})(?=.)/g,"$1 "))}</div></div>
+    ${cf?`<div class="btns" style="margin:6px 0"><button class="btn ghost" data-act="cf-copy" data-v="${h(c.num)}" style="flex:1">Copia il codice</button></div>`:""}
     ${c.foto?`<details class="hint" style="margin:8px 2px"><summary>Foto della tessera</summary><img src="${h(c.foto)}" alt="" style="width:100%;border-radius:12px;margin-top:8px"></details>`:""}
     <p class="hint" style="text-align:center">Lo schermo resta acceso finché la tessera è aperta. Se il lettore non legge, alza la luminosità del telefono.</p>
-    <div class="btns"><button class="btn ghost" data-act="card-edit" data-id="${h(id)}" style="flex:1">Modifica</button><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);
+    <div class="btns"><button class="btn ghost" data-act="${cf?"cf-edit":"card-edit"}" data-id="${h(id)}" style="flex:1">Modifica</button><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);
   drawCode(c);
   try{navigator.wakeLock&&navigator.wakeLock.request("screen").then(l=>{S.wake=l}).catch(()=>{})}catch(_){}
   // ordine per uso: la tessera aperta va in cima
@@ -1243,6 +1274,15 @@ async function readCode(file){
 }
 async function saveCard(){
   const sh=S.sheet;if(!sh||!sh.cardEdit)return;
+  if(sh.cf){
+    const num=$("#knum").value.toUpperCase().replace(/[^A-Z0-9]/g,""),pb=$("#kpb").value;
+    if(num.length!==16||!RE_CF.test(num)){toast("Il codice fiscale ha 16 caratteri: controlla di averlo scritto tutto.");return}
+    if(!cfOk(num)&&!confirm("L'ultimo carattere non torna con gli altri: forse c'è un errore di battitura. Salvo lo stesso?"))return;
+    const id=sh.cardEdit==="new"?uid():sh.cardEdit,old=(S.cards||{})[id]||{};
+    const data={k:"cf",n:"Codice fiscale",num,f:"CODE39",pb,u:old.u||new Date().toISOString(),by:S.uid||""};
+    try{const p=setDoc(doc(S.db,"cards",id),data);S.cards={...(S.cards||{}),[id]:data};closeSheet();render();toast("Codice fiscale salvato");await p}catch(err){toast(errMsg(err))}
+    return;
+  }
   const n=$("#kn").value.trim(),num=$("#knum").value.trim().replace(/\s+/g,"");
   if(!n){toast("Scrivi il nome del negozio.");return}
   if(!num){toast("Manca il numero della tessera: leggilo con la fotocamera o scrivilo.");return}
@@ -2561,6 +2601,9 @@ document.addEventListener("click",async e=>{
   else if(act==="settings") openSettings();
   else if(act==="close") closeSheet();
   else if(act==="card-new") cardForm("");
+  else if(act==="cf-new") cfForm("");
+  else if(act==="cf-edit") cfForm(el.dataset.id);
+  else if(act==="cf-copy"){try{await navigator.clipboard.writeText(el.dataset.v);toast("Codice fiscale copiato")}catch(_){toast("Copia non riuscita: tieni premuto sul codice per selezionarlo.")}}
   else if(act==="dl-new") dlForm("",el.dataset.d||"");
   else if(act==="cal-mode"){S.calMode=el.dataset.m;render()}
   else if(act==="cal-prev"||act==="cal-next"){S.calYm=shiftYM(S.calYm||ymOf(today()),act==="cal-prev"?-1:1);S.calDay="";render()}
@@ -2748,7 +2791,7 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",async e=>{
   const t=e.target,id=t.id;
   if(id==="file"){handleFile(t.files[0]);t.value="";return}
-  if(id==="kscan"&&t.files[0]){const m=$("#kmsg");if(m)m.textContent="Leggo il codice…";try{const r=await readCode(t.files[0]);if(r&&r.num){$("#knum").value=r.num;$("#kf").value=r.f||"";if(m)m.textContent="Letto: "+(BC_FMT[r.f]||"codice")+". Controlla che il numero corrisponda a quello stampato."}else if(m)m.textContent="Non riesco a leggerlo: riprova più vicino e con più luce, oppure scrivi il numero."}catch(_){if(m)m.textContent="Lettura non riuscita (serve la rete la prima volta): scrivi il numero."}t.value="";return}
+  if(id==="kscan"&&t.files[0]){const m=$("#kmsg");if(m)m.textContent="Leggo il codice…";try{const r=await readCode(t.files[0]);if(r&&r.num){$("#knum").value=r.num;$("#kf").value=S.sheet&&S.sheet.cf?"CODE39":(r.f||"");if(m)m.textContent="Letto: "+(BC_FMT[r.f]||"codice")+". Controlla che il numero corrisponda a quello stampato."}else if(m)m.textContent="Non riesco a leggerlo: riprova più vicino e con più luce, oppure scrivi il numero."}catch(_){if(m)m.textContent="Lettura non riuscita (serve la rete la prima volta): scrivi il numero."}t.value="";return}
   if(id==="kphoto"&&t.files[0]){try{const img=await loadImg(t.files[0]);if(S.sheet){S.sheet.foto=shrink(img,640,.72);paintPrev();const m=$("#klogo");if(m)m.textContent="Usa la foto della tessera."}}catch(_){toast("Foto non leggibile.")}t.value="";return}
   if(id==="ksite"){if(S.sheet)S.sheet.auto=false;refreshLogo();return}
   if(id==="kn"){const sh=S.sheet;if(sh&&sh.cardEdit&&(sh.auto||!$("#ksite").value.trim())){$("#ksite").value=cardSite(t.value);sh.auto=true;refreshLogo()}paintPrev();return}
