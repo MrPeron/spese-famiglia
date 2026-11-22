@@ -1,10 +1,10 @@
 // Conserva l'app sul telefono per aprirla anche senza rete.
 // La pagina e i file del sito: prima la rete (così gli aggiornamenti arrivano subito), se manca si usa la copia salvata.
-// Librerie e caratteri da CDN: la copia salvata, aggiornata in sottofondo.
+// Librerie, caratteri e loghi delle tessere: la copia salvata, aggiornata in sottofondo.
 // I dati (Firestore) e il login non passano da qui: li conserva Firebase.
 const CACHE = "casa-v1";
 const SHELL = ["./", "index.html", "config.js", "manifest.json", "icon-32.png", "icon-180.png", "icon-192.png", "icon-512.png"];
-const CDN = /^https:\/\/(www\.gstatic\.com\/firebasejs\/|cdnjs\.cloudflare\.com\/|fonts\.googleapis\.com\/|fonts\.gstatic\.com\/)/;
+const CDN = /^https:\/\/(www\.gstatic\.com\/firebasejs\/|cdnjs\.cloudflare\.com\/|cdn\.jsdelivr\.net\/npm\/@zxing\/|fonts\.googleapis\.com\/|fonts\.gstatic\.com\/)/;
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -22,7 +22,8 @@ self.addEventListener("fetch", e => {
     e.respondWith(fromNetwork(r));
     return;
   }
-  if (CDN.test(r.url)) e.respondWith(fromCache(r, e));
+  // librerie, caratteri e loghi delle tessere (immagini da altri siti): copia salvata
+  if (CDN.test(r.url) || r.destination === "image") e.respondWith(fromCache(r, e));
 });
 async function fromNetwork(r) {
   const c = await caches.open(CACHE);

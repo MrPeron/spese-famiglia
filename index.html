@@ -14,6 +14,8 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1E5A45">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="config.js"></script>
 <style>
 :root{
@@ -78,6 +80,23 @@ nav.sub button[aria-current="page"]{background:var(--primary);border-color:var(-
 .kv:first-of-type{border-top:0}
 .kv b{font-weight:600}
 .soon{font-size:.78rem;font-weight:600;color:var(--ochre)}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:8px}
+.ctile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0}
+.ctile b{font:700 .98rem/1.2 var(--display);margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctile span{color:var(--muted);font-size:.82rem}
+.cface{width:100%;aspect-ratio:1.586;border-radius:10px;object-fit:cover;display:grid;place-items:center;overflow:hidden}
+.cface.ini{color:#fff;font:800 1.7rem/1 var(--display);letter-spacing:.02em}
+.cface.logo{background:#fff!important;border:1px solid var(--line)}
+.cface.logo img{width:46%;height:auto;max-height:70%;object-fit:contain}
+.chead{display:flex;gap:12px;align-items:center}
+.chead .cface{width:84px;flex:0 0 84px}
+.cpanel{background:#fff;color:#111;border-radius:16px;padding:22px 16px 14px;margin:14px 0 6px;text-align:center}
+.cpanel svg{max-width:100%;height:auto}
+#ccode svg[id="cbar"]{width:100%;height:120px}
+#ccode>svg:not([id]){width:min(240px,70vw);height:auto}
+.cnum{font:600 1.05rem/1.3 ui-monospace,Menlo,monospace;letter-spacing:.08em;margin-top:10px;word-break:break-all}
+.kimg{display:flex;gap:12px;align-items:flex-start}
+#kprev{width:110px;flex:0 0 110px}
 
 .banner{margin:4px 0 14px;padding:10px 14px;border-radius:10px;background:var(--ochre-soft);color:var(--ink);font-size:.9rem}
 
@@ -319,11 +338,11 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, setDoc, getDoc, getDocs, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, setDoc, getDoc, getDocs, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "40 · 22/11/2026";
+const APP_VERSION = "41 · 22/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1056,19 +1075,145 @@ function vCasa(){
       +(P&&P.any&&!P.miss.length?kv("Risparmi",eur(P.s1)):"")
       +(bank?kv("Movimenti importati fino al",itDate(bank)):"");
   }
-  const tile=(nav,icon,t,sub)=>`<button class="tile" data-nav="${nav}">${icon}<b>${t}</b><span class="soon">${sub}</span></button>`;
+  const tile=(nav,icon,t,sub)=>`<button class="tile" data-nav="${nav}">${icon}<b>${t}</b><span${sub==="In arrivo"?' class="soon"':""}>${sub}</span></button>`;
   const svg=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   return `<div class="casa-date">${h(day)}</div>
   <button class="block" data-nav="spese" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">
     <h2>Spese</h2>${spese}<div style="height:6px"></div>
   </button>
   <div class="tiles">
-    ${tile("tessere",svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9v6M10 9v6M13 9v6M17 9v6"/>'),"Tessere","In arrivo")}
+    ${tile("tessere",svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9v6M10 9v6M13 9v6M17 9v6"/>'),"Tessere",cards().length?cards().length+(cards().length===1?" salvata":" salvate"):"Aggiungi la prima")}
     ${tile("liste",svg('<path d="M9 6h12M9 12h12M9 18h12"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/>'),"Lista della spesa","In arrivo")}
   </div>
   <button class="block" data-nav="scad" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit">
     <h2>Prossime scadenze</h2><p class="hint" style="padding-bottom:10px">In arrivo: bollo, assicurazioni, revisioni e rinnovi, collegati alle spese.</p>
   </button>`;
+}
+// ---------- Tessere fedeltà: codice a barre o QR, logo dal sito del negozio o foto della tessera ----------
+const CARD_SITES={esselunga:"esselunga.it",coop:"e-coop.it",conad:"conad.it",carrefour:"carrefour.it",lidl:"lidl.it",aldi:"aldi.it",eurospin:"eurospin.it",penny:"pennymarket.it",
+  pam:"pampanorama.it",despar:"despar.it",famila:"famila.it",bennet:"bennet.com",iper:"iper.it",tosano:"tosano.it",alì:"alisupermercati.it",ali:"alisupermercati.it",
+  decathlon:"decathlon.it",ikea:"ikea.com","leroy merlin":"leroymerlin.it",bricocenter:"bricocenter.it",obi:"obi-italia.it",mediaworld:"mediaworld.it",unieuro:"unieuro.it",euronics:"euronics.it",
+  mondadori:"mondadoristore.it",giunti:"giunti.it",tigotà:"tigota.it",tigota:"tigota.it","acqua e sapone":"acquaesapone.it","acqua & sapone":"acquaesapone.it",
+  douglas:"douglas.it",sephora:"sephora.it",kiko:"kikocosmetics.com",ovs:"ovs.it",coin:"coin.it",zara:"zara.com","h&m":"hm.com",upim:"upim.it",calzedonia:"calzedonia.com",
+  intimissimi:"intimissimi.com",tezenis:"tezenis.com",benetton:"benetton.com",primark:"primark.com",toys:"toyscenter.it","toys center":"toyscenter.it",prenatal:"prenatal.com",
+  chicco:"chicco.it",arcaplanet:"arcaplanet.it",maxizoo:"maxizoo.it",eni:"enilive.it",q8:"q8.it",ip:"ip.gruppoapi.com",esso:"esso.it",trenitalia:"trenitalia.com",italo:"italotreno.com",
+  "ryanair":"ryanair.com",ita:"ita-airways.com",autogrill:"autogrill.com",mcdonald:"mcdonalds.it",feltrinelli:"lafeltrinelli.it",tuodì:"tuodi.it",md:"mdspa.it",crai:"crai-supermercati.it",sigma:"supersigma.com",
+  natura:"naturasi.it",naturasì:"naturasi.it",lush:"lush.com",yves:"yves-rocher.it","yves rocher":"yves-rocher.it",boots:"boots.com",kasanova:"kasanova.it",thun:"thun.com",scarpe:"scarpeescarpe.it",
+  pittarello:"pittarello.com",bata:"bata.com",foot:"footlocker.it",cisalfa:"cisalfasport.it",sportler:"sportler.com"};
+const CARD_COLS=["#1E5A45","#2C5F7C","#B03A32","#B8730F","#6E5BB8","#C46FA6","#3B7EA1","#5B6C8F","#2F9C95","#8A6D3B"];
+const BC_FMT={EAN13:"EAN-13",EAN8:"EAN-8",UPC:"UPC-A",CODE128:"Code 128",CODE39:"Code 39",ITF:"ITF",QR:"QR code"};
+function cards(){return Object.entries(S.cards||{}).map(([id,c])=>({id,...c}))}
+function cardSite(name){const n=norm(name||"").trim();if(!n)return"";const w=" "+n.replace(/[^a-z0-9&]+/g," ")+" ";for(const k of Object.keys(CARD_SITES).sort((a,b)=>b.length-a.length))if(w.includes(" "+norm(k)+" "))return CARD_SITES[k];return n.replace(/[^a-z0-9]/g,"")+".it"}
+function cardCol(c){return c.col||CARD_COLS[[...(c.n||"?")].reduce((x,ch)=>x+ch.charCodeAt(0),0)%CARD_COLS.length]}
+function initials(n){return (n||"?").split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("")}
+function cardFace(c,big){
+  if(c.foto) return `<img class="cface" src="${h(c.foto)}" alt="">`;
+  if(c.logo) return `<div class="cface logo" data-ini="${h(initials(c.n))}" style="background:${cardCol(c)}"><img src="${h(c.logo)}" alt="" onerror="const p=this.parentNode;p.className='cface ini';p.textContent=p.dataset.ini"></div>`;
+  return `<div class="cface ini" style="background:${cardCol(c)}">${h(initials(c.n))}</div>`;
+}
+// formato dal numero: 13 cifre EAN-13, 8 cifre EAN-8, 12 UPC, altrimenti Code 128
+function guessFmt(num){const d=/^\d+$/.test(num);if(d&&num.length===13)return"EAN13";if(d&&num.length===8)return"EAN8";if(d&&num.length===12)return"UPC";return"CODE128"}
+function drawCode(c){
+  const box=$("#ccode");if(!box)return;
+  const num=(c.num||"").trim();if(!num){box.innerHTML=`<p class="hint">Nessun numero.</p>`;return}
+  try{
+    if(c.f==="QR"){if(!window.qrcode)throw 0;const q=qrcode(0,"M");q.addData(num);q.make();box.innerHTML=q.createSvgTag({cellSize:7,margin:2,scalable:true});return}
+    if(!window.JsBarcode)throw 0;
+    box.innerHTML=`<svg id="cbar"></svg>`;
+    try{JsBarcode("#cbar",num,{format:c.f||guessFmt(num),displayValue:false,height:110,margin:0,width:2.4,background:"#ffffff",lineColor:"#000000"})}
+    catch(e){JsBarcode("#cbar",num,{format:"CODE128",displayValue:false,height:110,margin:0,width:2.2,background:"#ffffff",lineColor:"#000000"})}
+  }catch(e){box.innerHTML=`<p class="hint">Codice non disponibile senza rete la prima volta: riapri l'app con la connessione.</p>`}
+}
+function vCards(){
+  const all=cards(),own=[...new Set(all.map(c=>c.pb).filter(Boolean))];
+  const f=S.cardPb&&own.includes(S.cardPb)?S.cardPb:"";
+  const list=all.filter(c=>!f||c.pb===f).sort((a,b)=>(b.u||"").localeCompare(a.u||"")||(a.n||"").localeCompare(b.n||""));
+  if(!all.length) return `<section class="empty"><h1>Le tessere fedeltà, sempre in tasca.</h1>
+    <p>Aggiungi le tessere di tutta la famiglia: alla cassa apri quella giusta e mostri il codice a barre o il QR. Funziona anche senza rete.</p>
+    <div class="btns"><button class="btn" data-act="card-new">Aggiungi una tessera</button></div></section>`;
+  return `<div class="btns" style="margin:10px 0 4px;align-items:center;justify-content:space-between">
+      ${own.length>1?`<div class="chips">${["",...own].map(p=>`<button class="chip" data-act="card-pb" data-p="${h(p)}" aria-pressed="${p===f}">${h(p||"Tutte")}</button>`).join("")}</div>`:"<span></span>"}
+      <button class="btn" data-act="card-new" style="padding:9px 14px">+ Aggiungi</button></div>
+    <div class="cgrid">${list.map(c=>`<button class="ctile" data-act="card-open" data-id="${h(c.id)}">${cardFace(c)}<b>${h(c.n||"Tessera")}</b><span>${h(c.pb||"")}</span></button>`).join("")}</div>`;
+}
+function openCard(id){
+  const c=(S.cards||{})[id];if(!c)return;
+  S.sheet={card:id};
+  openSheet(`<div class="chead">${cardFace(c)}<div><h3>${h(c.n||"Tessera")}</h3><div class="sub">${h(c.pb||"")}${c.f?" · "+h(BC_FMT[c.f]||c.f):""}</div></div></div>
+    <div class="cpanel"><div id="ccode"></div><div class="cnum">${h((c.num||"").replace(/(.{4})(?=.)/g,"$1 "))}</div></div>
+    ${c.foto?`<details class="hint" style="margin:8px 2px"><summary>Foto della tessera</summary><img src="${h(c.foto)}" alt="" style="width:100%;border-radius:12px;margin-top:8px"></details>`:""}
+    <p class="hint" style="text-align:center">Lo schermo resta acceso finché la tessera è aperta. Se il lettore non legge, alza la luminosità del telefono.</p>
+    <div class="btns"><button class="btn ghost" data-act="card-edit" data-id="${h(id)}" style="flex:1">Modifica</button><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);
+  drawCode(c);
+  try{navigator.wakeLock&&navigator.wakeLock.request("screen").then(l=>{S.wake=l}).catch(()=>{})}catch(_){}
+  // ordine per uso: la tessera aperta va in cima
+  const u=new Date().toISOString();if((c.u||"").slice(0,10)!==u.slice(0,10)){setDoc(doc(S.db,"cards",id),{u},{merge:true}).catch(()=>{})}
+}
+function cardForm(id){
+  const c=id?(S.cards||{})[id]||{}:{pb:S.cardPb||payers().find(p=>p&&S.uid&&norm(S.uid).includes(norm(p)))||famName()};
+  S.sheet={cardEdit:id||"new",logo:c.logo||"",foto:c.foto||"",site:c.site||"",auto:!c.site};
+  const opt=(v,l,sel)=>`<option value="${h(v)}"${v===sel?" selected":""}>${h(l)}</option>`;
+  openSheet(`<h3>${id?"Modifica tessera":"Nuova tessera"}</h3>
+    <div class="field"><label for="kn">Negozio</label><input id="kn" value="${h(c.n||"")}" placeholder="Esselunga Fidaty" autocomplete="off"></div>
+    <div class="field"><span class="lab">Codice</span>
+      <div class="btns" style="margin:0 0 8px"><button class="btn ghost" data-act="card-scan" style="flex:1">Leggi con la fotocamera</button></div>
+      <input type="file" id="kscan" accept="image/*" capture="environment" hidden>
+      <div class="two"><input id="knum" value="${h(c.num||"")}" placeholder="Numero sotto il codice" inputmode="text" autocomplete="off">
+      <select id="kf" aria-label="Tipo di codice">${opt("","Tipo automatico",c.f||"")}${Object.entries(BC_FMT).map(([k,l])=>opt(k,l,c.f||"")).join("")}</select></div>
+      <p class="hint" id="kmsg"></p></div>
+    <div class="field"><label for="kpb">Di chi è</label><select id="kpb">${members().map(m=>opt(m,m,c.pb||famName())).join("")}</select></div>
+    <div class="field"><span class="lab">Immagine</span>
+      <div class="kimg"><div id="kprev">${cardFace({...c,logo:S.sheet.logo,foto:S.sheet.foto})}</div>
+        <div style="flex:1;min-width:0"><input id="ksite" value="${h(c.site||"")}" placeholder="sito del negozio (esselunga.it)" autocomplete="off" inputmode="url">
+        <p class="hint" id="klogo">${c.foto?"Usa la foto della tessera.":c.logo?"Logo preso dal sito.":"Scrivi il negozio: cerco il logo dal suo sito."}</p>
+        <div class="btns" style="margin:4px 0 0"><button class="btn ghost" data-act="card-photo" style="padding:8px 12px">${c.foto?"Cambia foto":"Foto della tessera"}</button>${c.foto?`<button class="btn ghost" data-act="card-nophoto" style="padding:8px 12px">Togli foto</button>`:""}</div>
+        <input type="file" id="kphoto" accept="image/*" capture="environment" hidden></div></div></div>
+    <div class="btns"><button class="btn" data-act="card-save" style="flex:1">Salva</button>${id?`<button class="btn danger" data-act="card-del" data-id="${h(id)}">Elimina</button>`:""}</div>`);
+}
+// Logo: prima l'icona del sito, poi il servizio di icone di Google; si tiene la prima abbastanza grande (Google dà un mappamondo da 16 px se non trova niente)
+function tryImg(src,min){return new Promise(res=>{const i=new Image();const t=setTimeout(()=>res(false),5000);i.onload=()=>{clearTimeout(t);res(i.naturalWidth>=min)};i.onerror=()=>{clearTimeout(t);res(false)};i.src=src})}
+async function findLogo(site){
+  site=(site||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*$/,"");if(!site||!site.includes("."))return"";
+  const host=site.startsWith("www.")?site:"www."+site;
+  for(const [src,min] of [["https://"+host+"/apple-touch-icon.png",64],["https://www.google.com/s2/favicons?domain="+encodeURIComponent(site)+"&sz=128",48]])
+    if(await tryImg(src,min))return src;
+  return"";
+}
+async function refreshLogo(){
+  const sh=S.sheet;if(!sh||!sh.cardEdit)return;const site=($("#ksite")||{}).value||"";sh.site=site.trim();
+  const msg=$("#klogo");if(msg&&!sh.foto)msg.textContent="Cerco il logo…";
+  const want=sh.site,url=await findLogo(want);
+  if(!S.sheet||S.sheet!==sh||sh.site!==want)return;
+  sh.logo=url;paintPrev();
+  if(msg&&!sh.foto)msg.textContent=url?"Logo preso dal sito.":"Logo non trovato: restano le iniziali. Puoi fotografare la tessera.";
+}
+function paintPrev(){const sh=S.sheet,p=$("#kprev");if(!sh||!p)return;p.innerHTML=cardFace({n:($("#kn")||{}).value||"",logo:sh.logo,foto:sh.foto})}
+function loadImg(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=u})}
+function shrink(img,max,q){const r=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*r);c.height=Math.round(img.naturalHeight*r);c.getContext("2d").drawImage(img,0,0,c.width,c.height);return c.toDataURL("image/jpeg",q)}
+// Lettura del codice da una foto: BarcodeDetector del telefono (Android) oppure la libreria ZXing (iPhone)
+const ZX_FMT={EAN_13:"EAN13",EAN_8:"EAN8",UPC_A:"UPC",CODE_128:"CODE128",CODE_39:"CODE39",ITF:"ITF",QR_CODE:"QR"},BD_FMT={ean_13:"EAN13",ean_8:"EAN8",upc_a:"UPC",code_128:"CODE128",code_39:"CODE39",itf:"ITF",qr_code:"QR"};
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)})}
+async function readCode(file){
+  const img=await loadImg(file);
+  if("BarcodeDetector" in window){try{const r=await new BarcodeDetector().detect(img);if(r&&r[0])return {num:r[0].rawValue,f:BD_FMT[r[0].format]||""}}catch(_){}}
+  if(!window.ZXing) await loadScript("https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js");
+  const hints=new Map();hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+  const reader=new ZXing.BrowserMultiFormatReader(hints);
+  for(const max of [1400,900,2000]){
+    try{const r=await reader.decodeFromImageUrl(shrink(img,max,.92));return {num:r.getText(),f:ZX_FMT[ZXing.BarcodeFormat[r.getBarcodeFormat()]]||""}}catch(_){}
+  }
+  return null;
+}
+async function saveCard(){
+  const sh=S.sheet;if(!sh||!sh.cardEdit)return;
+  const n=$("#kn").value.trim(),num=$("#knum").value.trim().replace(/\s+/g,"");
+  if(!n){toast("Scrivi il nome del negozio.");return}
+  if(!num){toast("Manca il numero della tessera: leggilo con la fotocamera o scrivilo.");return}
+  const site=($("#ksite").value||"").trim();
+  if(site!==sh.site||(!sh.logo&&site))await refreshLogo();
+  const id=sh.cardEdit==="new"?uid():sh.cardEdit,old=(S.cards||{})[id]||{};
+  const data={n,num,f:$("#kf").value||"",pb:$("#kpb").value,site,logo:sh.logo||"",foto:sh.foto||"",col:old.col||"",u:old.u||new Date().toISOString(),by:S.uid||""};
+  try{const p=setDoc(doc(S.db,"cards",id),data);S.cards={...(S.cards||{}),[id]:data};closeSheet();render();toast("Tessera salvata");await p}catch(err){toast(errMsg(err))}
 }
 function vSoon(k){
   const t={tessere:["Tessere fedeltà","Codici a barre e QR delle vostre tessere, con il logo del negozio o la foto della tessera, pronti alla cassa anche senza rete."],
@@ -1824,7 +1969,7 @@ function openSheet(html){$("#sheet").innerHTML=`<div class="grab"></div>`+html;$
   sh.addEventListener("touchmove",e=>{if(y0==null)return;dy=e.touches[0].clientY-y0;if(dy>0&&sh.scrollTop<=0){sh.style.transition="none";sh.style.transform=`translateY(${dy}px)`;e.preventDefault()}else if(dy<0){y0=null;sh.style.transform=""}},{passive:false});
   sh.addEventListener("touchend",()=>{if(y0==null)return;y0=null;sh.style.transition="";sh.style.transform="";if(dy>90)closeSheet()});
 })();
-function closeSheet(){$("#scrim").classList.remove("on");$("#sheet").classList.remove("on");S.sheet=null;if(S.dirty){S.dirty=false;render()}}
+function closeSheet(){try{S.wake&&S.wake.release()}catch(_){}S.wake=null;$("#scrim").classList.remove("on");$("#sheet").classList.remove("on");S.sheet=null;if(S.dirty){S.dirty=false;render()}}
 async function openEdit(id){
   const t=S.byId[id];if(!t) return;S.sheet={type:"edit",id};
   const k=t.k||"spesa";
@@ -2021,7 +2166,7 @@ function render(){
   $(".brand").textContent=sp?"Spese":({casa:"Casa",tessere:"Tessere",scad:"Scadenze",liste:"Liste"}[S.view]||"Casa");
   document.querySelectorAll("nav.tabs [data-nav]").forEach(b=>b.setAttribute("aria-current",(sp?"spese":S.view)===b.dataset.nav?"page":"false"));
   const banner=S.newVer?`<div class="banner" style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between"><span>È disponibile una nuova versione (${h(S.newVer)}).</span><button class="btn" data-act="reload" style="padding:8px 14px">Aggiorna</button></div>`:"";
-  const v={casa:vCasa,tessere:()=>vSoon("tessere"),scad:()=>vSoon("scad"),liste:()=>vSoon("liste"),home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
+  const v={casa:vCasa,tessere:vCards,scad:()=>vSoon("scad"),liste:()=>vSoon("liste"),home:vHome,movs:vMovs,cash:vCash,imp:vImp,check:vCheck}[S.view]||vCasa;
   const off=navigator.onLine===false?`<div class="banner" style="margin-top:8px">Senza rete: vedi i dati salvati sul telefono. Le modifiche partono appena torna la connessione.</div>`:"";
   $("#view").innerHTML=off+banner+(sp?spSub():"")+v();
 }
@@ -2076,6 +2221,15 @@ document.addEventListener("click",async e=>{
   else if(act==="mkgiro"){const t=S.byId[el.dataset.id];if(!t)return;el.disabled=true;try{await putTx([{...t,k:"giroconto",c:null,cb:"manuale"}]);if(t.acc)await saveFixes([[keyOf(t),{k:"giroconto",cb:"manuale"}]]);toast("Segnato come giroconto: non conta più come spesa o entrata")}catch(err){toast(errMsg(err));el.disabled=false}}
   else if(act==="settings") openSettings();
   else if(act==="close") closeSheet();
+  else if(act==="card-new") cardForm("");
+  else if(act==="card-open") openCard(el.dataset.id);
+  else if(act==="card-edit") cardForm(el.dataset.id);
+  else if(act==="card-pb"){S.cardPb=el.dataset.p;render()}
+  else if(act==="card-scan") $("#kscan").click();
+  else if(act==="card-photo") $("#kphoto").click();
+  else if(act==="card-nophoto"){if(S.sheet){S.sheet.foto="";paintPrev();el.remove();const m=$("#klogo");if(m)m.textContent=S.sheet.logo?"Logo preso dal sito.":"Niente foto: restano logo o iniziali."}}
+  else if(act==="card-save") saveCard();
+  else if(act==="card-del"){const c=(S.cards||{})[el.dataset.id];if(!c||!confirm("Eliminare la tessera "+(c.n||"")+"?"))return;try{const p=deleteDoc(doc(S.db,"cards",el.dataset.id));const m={...S.cards};delete m[el.dataset.id];S.cards=m;closeSheet();render();toast("Tessera eliminata");await p}catch(err){toast(errMsg(err))}}
   else if(act==="filtercat"){S.f={q:"",c:el.dataset.c,p:S.hf.p,s:"",pb:S.hf.pb};S.view="movs";render();window.scrollTo(0,0)}
   else if(act==="filterp"){S.f={q:"",c:S.hf.c,p:el.dataset.p,s:"",pb:S.hf.pb};S.view="movs";render();window.scrollTo(0,0)}
   else if(act==="clearf"){S.f={q:"",c:"",p:"",s:"",pb:""};render()}
@@ -2226,6 +2380,10 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",async e=>{
   const t=e.target,id=t.id;
   if(id==="file"){handleFile(t.files[0]);t.value="";return}
+  if(id==="kscan"&&t.files[0]){const m=$("#kmsg");if(m)m.textContent="Leggo il codice…";try{const r=await readCode(t.files[0]);if(r&&r.num){$("#knum").value=r.num;$("#kf").value=r.f||"";if(m)m.textContent="Letto: "+(BC_FMT[r.f]||"codice")+". Controlla che il numero corrisponda a quello stampato."}else if(m)m.textContent="Non riesco a leggerlo: riprova più vicino e con più luce, oppure scrivi il numero."}catch(_){if(m)m.textContent="Lettura non riuscita (serve la rete la prima volta): scrivi il numero."}t.value="";return}
+  if(id==="kphoto"&&t.files[0]){try{const img=await loadImg(t.files[0]);if(S.sheet){S.sheet.foto=shrink(img,640,.72);paintPrev();const m=$("#klogo");if(m)m.textContent="Usa la foto della tessera."}}catch(_){toast("Foto non leggibile.")}t.value="";return}
+  if(id==="ksite"){if(S.sheet)S.sheet.auto=false;refreshLogo();return}
+  if(id==="kn"){const sh=S.sheet;if(sh&&sh.cardEdit&&(sh.auto||!$("#ksite").value.trim())){$("#ksite").value=cardSite(t.value);sh.auto=true;refreshLogo()}paintPrev();return}
   if(id==="fc"){S.f.c=t.value;t.blur();render();return}
   if(id==="fp"){S.f.p=t.value;t.blur();render();return}
   if(id==="fs"){S.f.s=t.value;t.blur();render();return}
@@ -2311,9 +2469,10 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
   onAuthStateChanged(S.auth,u=>{
     unsubs.forEach(f=>f());unsubs=[];
     S.authed=!!u;S.uid=u?u.email:null;
-    if(!u){S.months={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
+    if(!u){S.months={};S.cards={};S.settings=clone(DEFAULTS);rebuildCats();S.imp=null;rebuild();render();return}
     const denied=err=>{if(err&&err.code==="permission-denied"){S.authMsg="Questo account non è autorizzato a usare l’app.";signOut(S.auth)}else toast("Connessione ai dati persa: ricarica la pagina.")};
     unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes();fixGenius()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"cards"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.cards=m;if(S.view==="tessere"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(doc(S.db,"fam","settings"),d=>{S.settings=Object.assign(clone(DEFAULTS),d.exists()?d.data():{});if(JSON.stringify(S.settings.members)===JSON.stringify(["Famiglia","Alessandro","Moglie"]))S.settings.members=DEFAULTS.members.slice();if(!S.settings.accounts)S.settings.accounts={};if(!S.settings.rules)S.settings.rules={};if(!S.settings.formats)S.settings.formats={};if(!S.settings.budgets)S.settings.budgets={};if(!S.settings.conti)S.settings.conti={};if(!S.settings.acctok)S.settings.acctok={};if(!S.settings.cats)S.settings.cats={};rebuildCats();render();S.loadedSettings=true;migrateFixes()},denied));
     render();
   });
