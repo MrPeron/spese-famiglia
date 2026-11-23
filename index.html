@@ -517,7 +517,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "71 · 23/11/2026";
+const APP_VERSION = "72 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -954,7 +954,7 @@ function findHeader(grid){
     let d=has(COLRE.d); if(d<0) d=has(COLRE.dv);
     const a=has(COLRE.a),deb=has(COLRE.deb),cre=has(COLRE.cre);
     if(d>=0&&(a>=0||deb>=0||cre>=0)){
-      const xs=[];cells.forEach((c,i)=>{if(c&&COLRE.x.test(c)&&i!==d&&!COLRE.dv.test(c))xs.push(i)});
+      const xs=[];cells.forEach((c,i)=>{if(c&&COLRE.x.test(c)&&i!==d&&!COLRE.dv.test(c)&&!COLRE.d.test(c))xs.push(i)});
       return {hdr:r,map:{d,bal:has(COLRE.bal),x1:xs[0]??-1,x2:xs[1]??-1,x3:xs[2]??-1,a:(deb>=0&&cre>=0&&a<0)?-1:a,deb:a>=0?-1:deb,cre:a>=0?-1:cre}};
     }
   }
@@ -1049,6 +1049,8 @@ function bankBal(I){
 function buildRows(){
   const I=S.imp,g=I.grid,mp=I.map,out=[],seen={},raws=[];
   if(mp.d<0||(mp.a<0&&mp.deb<0&&mp.cre<0)){I.rows=[];return}
+  // le altre colonne con una data (data registrazione / operazione / valuta): servono a riconoscere i movimenti già salvati con l'altra data
+  const hcells=(g[I.hdr]||[]).map(c=>norm(c));I.altCols=hcells.map((c,i)=>c&&i!==mp.d&&(COLRE.d.test(c)||COLRE.dv.test(c))?i:-1).filter(i=>i>=0);
   // primo passaggio: data, importo e testo originale, per numerare i movimenti uguali dello stesso giorno
   for(let r=I.hdr+1;r<g.length;r++){
     const row=g[r]||[];const d=toISO(row[mp.d]);if(!d) continue;
@@ -1058,7 +1060,7 @@ function buildRows(){
     if(isNaN(a)||a===0) continue;
     if(I.invert&&mp.a>=0) a=-a;
     a=Math.round(a*100)/100;
-    raws.push({r,d,a,raw:norm([mp.x1,mp.x2,mp.x3].filter(i=>i!=null&&i>=0).map(i=>String(row[i]??"")).join(" "))});
+    raws.push({r,d,a,alts:I.altCols.map(i=>toISO(row[i])).filter(x=>x&&x!==d),raw:norm([mp.x1,mp.x2,mp.x3].filter(i=>i!=null&&i>=0).map(i=>String(row[i]??"")).join(" "))});
   }
   const grp={};for(const x of raws){const k=x.d+"|"+Math.round(Math.abs(x.a)*100);(grp[k]=grp[k]||[]).push(x)}
   for(const list of Object.values(grp)){list.sort((x,y)=>x.raw.localeCompare(y.raw)||x.r-y.r);list.forEach((x,n)=>{x.key=fpKey(I.acc||"",x.d,x.a,n)})}
@@ -1092,6 +1094,11 @@ function buildRows(){
   }
   // doppioni probabili: un aggiornamento dell'estratto può riportare lo stesso movimento con un'altra data (data operazione / contabile, movimento "in corso")
   // se un movimento già salvato dello stesso conto, nel periodo del file, non ha più il suo gemello esatto nel file, e il file ha uno con lo stesso importo a pochi giorni: è lui
+  // stesso movimento già salvato con la data di un'altra colonna del file: è già presente
+  if(I.acc&&I.altCols.length){const ex={},claimed=new Set(out.filter(r=>r.dup).map(r=>r.id));
+    for(const t of S.all)if(t.acc===I.acc){const k=Math.round(t.a*100)+"|"+t.d;(ex[k]=ex[k]||[]).push(t)}
+    const altOf={};for(const x of raws)altOf[x.key]=x.alts;
+    for(const r of out){if(r.dup)continue;for(const ad of altOf[r.id]||[]){const l=(ex[Math.round(r.a*100)+"|"+ad]||[]).filter(t=>!claimed.has(t.id));if(l.length){claimed.add(l[0].id);r.dup=true;r.altdup={d:ad,m:l[0].m};break}}}}
   if(I.acc&&out.length){const keep=I.keep||(I.keep={}),ds=out.map(r=>r.d).sort(),dmin=ds[0],dmax=ds[ds.length-1],fk=new Set(out.map(r=>r.id)),used=new Set();
     const cand=S.all.filter(t=>t.acc===I.acc&&t.d>=dmin&&t.d<=dmax&&!fk.has(t.id)&&!fk.has(keyOf(t)));
     for(const r of out){if(r.dup||keep[r.rk])continue;let best=null,bd=99;
@@ -3005,6 +3012,7 @@ function vImp(){
       <div class="field"><label for="ipb">Sostenuta da</label><select id="ipb">${payerOpts().map(m=>`<option ${I.payer===m?"selected":""}>${h(m)}</option>`).join("")}</select>${I.payerBy?`<p class="hint">${h(I.payerBy)}</p>`:""}</div>
       <div class="field"><label for="iper">Beneficiario predefinito</label><select id="iper">${members().map(m=>`<option ${I.person===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
+    ${I.map.d>=0?`<p class="hint">Data letta dalla colonna «${h(I.cols[I.map.d]||"")}»${(I.altCols||[]).length?`; nel file c'è anche ${I.altCols.map(i=>"«"+h(I.cols[i]||"")+"»").join(", ")}: i movimenti già salvati con quella data vengono riconosciuti${I.rows.some(r=>r.altdup)?` (${I.rows.filter(r=>r.altdup).length} in questo file)`:""}`:""}.</p>`:""}
     <button class="link" data-act="togglemap">${I.showMap?"Nascondi colonne":"Modifica colonne"}</button>
     ${I.showMap||!mapOk?`<div class="map" style="margin-top:10px">
       <div><label for="m_d">Data</label><select id="m_d" data-m="d">${opt(0,I.map.d)}</select></div>
