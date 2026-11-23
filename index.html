@@ -517,7 +517,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "76 · 23/11/2026";
+const APP_VERSION = "77 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -872,6 +872,22 @@ async function loadFixes(yms){
   for(const ym of yms) if(!S.fixes[ym]){try{const d=await getDoc(doc(S.db,"fixes",ym));S.fixes[ym]=(d.exists()&&d.data().f)||{}}catch(e){S.fixes[ym]={}}}
 }
 function fixFor(k){const m=S.fixes[keyYm(k)];return m&&m[k]}
+// copia di sicurezza: tutti i movimenti e tutte le correzioni, in un file sul dispositivo
+async function backupAll(){const fx={};try{const snap=await getDocs(collection(S.db,"fixes"));snap.docs.forEach(d=>{fx[d.id]=(d.data()&&d.data().f)||{}})}catch(e){}
+  const data={app:"Casa Peron",v:APP_VERSION,date:new Date().toISOString(),months:S.months,fixes:fx};
+  const name="casa-peron-copia-"+today()+".json",blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  // sul telefono (app sulla schermata Home) il download diretto non sempre funziona: si usa Condividi → Salva su File
+  try{const file=new File([blob],name,{type:"application/json"});if(navigator.canShare&&navigator.canShare({files:[file]})&&/iphone|ipad|android/i.test(navigator.userAgent)){await navigator.share({files:[file],title:name});return fx}}catch(e){if(e&&e.name==="AbortError")throw new Error("Copia non salvata: riprova e scegli «Salva su File».")}
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);return fx}
+async function resetImported(){
+  const list=S.all.filter(t=>t.acc);if(list.length)await delTxList(list);
+  // dimentica le eliminazioni (i doppioni tolti): le altre correzioni restano
+  const snap=await getDocs(collection(S.db,"fixes"));let n=0;
+  for(const d of snap.docs){const f=(d.data()&&d.data().f)||{},rm={};for(const [k,v] of Object.entries(f))if(v&&v.del){rm[k]=deleteField();n++}if(Object.keys(rm).length)await setDoc(doc(S.db,"fixes",d.id),{f:rm},{merge:true})}
+  S.fixes={};await saveSettings({notDup:{},dateCol:{}});S.settings.notDup={};S.settings.dateCol={};return {tx:list.length,del:n}}
+async function restoreAll(file){const data=JSON.parse(await file.text());if(!data||!data.months)throw new Error("Il file non è una copia di Casa Peron.");
+  let n=0;for(const [ym,d] of Object.entries(data.months)){const tx=(d&&d.tx)||{};n+=Object.keys(tx).length;await setDoc(doc(S.db,"months",ym),{tx},{merge:true})}
+  for(const [ym,f] of Object.entries(data.fixes||{}))if(Object.keys(f).length)await setDoc(doc(S.db,"fixes",ym),{f},{merge:true});S.fixes={};return n}
 async function saveFixes(entries){
   const by={};
   for(const [k,f] of entries){if(!k)continue;const clean={};for(const [n,v] of Object.entries(f))if(v!==undefined&&v!==null&&v!=="")clean[n]=v;(by[keyYm(k)]=by[keyYm(k)]||{})[k]=clean}
@@ -3212,6 +3228,12 @@ function openSettings(){
       <p class="hint">Quanto del patrimonio è di ciascuno, a una data. La famiglia è il resto. Lascia vuoto chi non ha una quota.</p>
       ${kids().map(n=>{const q=quote()[n]||{},id=hash(n);return `<div class="lab" style="font-size:.85rem;margin-top:8px">${h(n)}</div><div class="two">${dateInput("q_d_"+id,q.d||today(),n+": data")}<input type="text" inputmode="decimal" id="q_v_${id}" data-qn="${h(n)}" aria-label="${h(n)}: importo" placeholder="€" value="${q.v?h(String(q.v).replace(".",",")):""}"></div>`}).join("")}
       <div class="btns" style="margin:10px 0 0"><button class="btn ghost" data-act="savequote" ${S.canWrite?"":"disabled"}>Salva quote</button></div></div>
+    <div class="field"><div class="lab">Ripartire puliti dagli estratti</div>
+      <p class="hint">Toglie tutti i movimenti importati dalle banche e dimentica i movimenti eliminati (doppioni compresi), così si reimportano gli estratti da zero. Restano: budget, conti e saldi, regole delle categorie, correzioni di categoria e persone, contanti e prelievi segnati a mano, spese al volo, tessere, calendario, liste. Prima scarica la copia di sicurezza: con «Ripristina» torna tutto com'era.</p>
+      <div class="btns" style="margin:8px 0 0"><button class="btn ghost" data-act="bk-dl">1 · Scarica copia di sicurezza</button>${S.bkDone?`<button class="btn danger" data-act="rs-ask">2 · Reset dei movimenti importati</button>`:""}</div>
+      ${S.confirmClear==="__reset"?`<div class="banner" style="margin:10px 0 0">Eliminare ${S.all.filter(t=>t.acc).length} movimenti importati e ${S.delFixN??"le"} eliminazioni ricordate? Poi reimporta l'estratto di 12 mesi di ogni conto e carta.
+        <div class="btns" style="margin:8px 0 0"><button class="btn danger" data-act="rs-go">Sì, reset</button><button class="btn ghost" data-act="noclear">Annulla</button></div></div>`:""}
+      <label class="link" style="display:inline-block;margin-top:10px;cursor:pointer">Ripristina da una copia<input type="file" id="bkfile" accept=".json,application/json" hidden></label></div>
     <div class="field"><div class="lab">Correzioni salvate: <span id="fixn">…</span></div>
       <p class="hint">Tipo, categoria, persone, nomi, segno ed eliminazioni decisi da voi sui singoli movimenti, e le categorie trovate da Claude. Vengono riapplicati a ogni import, anche dopo aver svuotato e ricaricato.</p>
       ${S.confirmClear==="__fix"?`<div class="banner" style="margin:0">Azzerare tutte le correzioni salvate? I movimenti già caricati non cambiano, ma un nuovo caricamento non le riapplicherà più.
@@ -3483,6 +3505,9 @@ document.addEventListener("click",async e=>{
     try{await saveSettings({conti:{[id]:v}});S.settings.conti={...conti(),[id]:v};S.impAcc=id;S.impNew=false;toast("Conto aggiunto");if(S.sheet&&S.sheet.type==="settings")openSettings();else render()}
     catch(err){toast(errMsg(err));el.disabled=false}
   }
+  else if(act==="bk-dl"){el.disabled=true;try{const fx=await backupAll();S.delFixN=Object.values(fx).reduce((x,f)=>x+Object.values(f).filter(v=>v&&v.del).length,0);S.bkDone=true;toast("Copia scaricata: tienila finché non hai finito");openSettings()}catch(err){toast(errMsg(err));el.disabled=false}}
+  else if(act==="rs-ask"){S.confirmClear="__reset";openSettings()}
+  else if(act==="rs-go"){el.disabled=true;try{const r=await resetImported();S.confirmClear=null;S.bkDone=false;closeSheet();S.view="imp";render();toast("Reset fatto: tolti "+r.tx+" movimenti e "+r.del+" eliminazioni. Ora importa gli estratti")}catch(err){toast(errMsg(err));el.disabled=false}}
   else if(act==="askclear"){S.confirmClear=el.dataset.k;openSettings()}
   else if(act==="noclear"){S.confirmClear=null;openSettings()}
   else if(act==="applyperson"){
@@ -3626,6 +3651,7 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",async e=>{
   const t=e.target,id=t.id;
   if(id==="file"){handleFile(t.files[0]);t.value="";return}
+  if(id==="bkfile"&&t.files[0]){const f=t.files[0];t.value="";if(!confirm("Ripristinare i movimenti e le correzioni dalla copia "+f.name+"? Si aggiungono a quelli attuali."))return;try{const n=await restoreAll(f);toast("Ripristinati "+n+" movimenti")}catch(err){toast(errMsg(err))}return}
   if(id==="keepstale"&&S.imp){S.imp.keepStale=t.checked;render();return}
   if(t.dataset&&t.dataset.dup&&S.dupSel){if(t.checked)S.dupSel.ids.add(t.dataset.dup);else S.dupSel.ids.delete(t.dataset.dup);const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(id==="kscan"&&t.files[0]){const m=$("#kmsg");if(m)m.textContent="Leggo il codice…";try{applyScan(await readCode(t.files[0]))}catch(_){if(m)m.textContent="Lettura non riuscita (serve la rete la prima volta): scrivi il numero."}t.value="";return}
