@@ -517,7 +517,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "74 · 23/11/2026";
+const APP_VERSION = "75 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -2866,11 +2866,23 @@ function cardDups(from,to,accs){const bi=batchIds(),nd=S.settings.notDup||{},A=n
 function subsetSum(items,target){const T=Math.round(target*100);if(T<=0||!items.length||T>2e6)return null;const from=new Int32Array(T+1).fill(-2);from[0]=-1;const via=new Int32Array(T+1);
   items.forEach((it,i)=>{const c=Math.round(-it.t.a*100);if(c>0)for(let s=T;s>=c;s--)if(from[s]===-2&&from[s-c]!==-2){from[s]=i;via[s]=s-c}});
   if(from[T]===-2)return null;const pick=[];let s2=T;while(s2>0){pick.push(items[from[s2]]);s2=via[s2]}return pick}
-function cardDupHint(r,accs){const d=r.ch-r.sp;if(d>-1||!r.list.length)return "";const L=cardDups(r.from,r.to,accs);if(!L.length)return `<p class="hint" style="margin-top:10px">Le spese della carta superano l'addebito di ${eur(-d)}, ma non trovo spese ripetute con lo stesso importo: controlla se manca un rimborso o se una spesa è del ciclo dopo.</p>`;
-  const tot=L.reduce((x,o)=>x-o.t.a,0),exact=Math.abs(tot+d)<=0.01?L:subsetSum(L,-d),ids=(exact||L).map(o=>o.t.id);
-  return `<div class="hint" style="margin-top:12px"><b>Probabili doppioni in questo estratto</b> (${L.length}, ${eur(tot)}): stesso importo di una spesa arrivata con un import precedente, a pochi giorni.${exact?` <b>${exact.length===L.length?"Insieme":"Questi "+exact.length}</b> fanno esattamente la differenza di ${eur(-d)}: quasi certamente sono doppioni.`:""}</div>
-    ${L.map(o=>`<label class="dupl"><input type="checkbox" data-cd="${h(o.t.id)}" ${ids.includes(o.t.id)?"checked":""}><span><b>${h(o.t.m||o.t.x||"")}</b> <span class="num">${eur(-o.t.a)}</span><small>${h(srcName(o.t))} · ${ddmm(o.t.d)}, già presente il ${ddmm(o.tw.d)}</small></span></label>`).join("")}
-    <div class="btns" style="margin:8px 0 4px"><button class="btn" data-act="cd-del">Elimina gli spuntati</button></div>`}
+// perché le spese della carta superano l'addebito: doppioni che fanno la differenza, una spesa uguale alla differenza, spese degli ultimi giorni passate all'estratto dopo
+function cardDupHint(r,accs){const d=r.ch-r.sp;if(d>-1||!r.list.length)return "";const D=-d,A=new Set(accs);
+  const cyc=cardTx().filter(t=>A.has(t.acc)&&t.a<0&&t.d>r.from&&t.d<=r.to);
+  const L=cardDups(r.from,r.to,accs),tot=L.reduce((x,o)=>x-o.t.a,0),exact=L.length?(Math.abs(tot-D)<=0.01?L:subsetSum(L,D)):null;
+  const one=cyc.filter(t=>Math.abs(-t.a-D)<=0.01);
+  // ultimi giorni del ciclo: se le spese dall'ultimo giorno indietro fanno la differenza, l'estratto chiude prima
+  const byDay={};for(const t of cyc)byDay[t.d]=(byDay[t.d]||0)-t.a;let acc=0,tail=null;
+  for(const dd of Object.keys(byDay).sort().reverse()){if(dd<=shiftDay(r.to,-6))break;acc+=byDay[dd];if(Math.abs(acc-D)<=0.01){tail=dd;break}}
+  const ck=(t,on,sub)=>`<label class="dupl"><input type="checkbox" data-cd="${h(t.id)}" ${on?"checked":""}><span><b>${h(t.m||t.x||"")}</b> <span class="num">${eur(-t.a)}</span><small>${h(srcName(t))} · ${ddmm(t.d)}${sub?" · "+sub:""}</small></span></label>`;
+  let html=`<div class="hint" style="margin-top:12px">Le spese della carta superano l'addebito di <b>${eur(D)}</b>.`;
+  if(exact)html+=` ${exact.length===1?"Questa spesa":"Queste "+exact.length+" spese"} arrivate due volte fanno esattamente la differenza: quasi certamente sono doppioni.</div>${exact.map(o=>ck(o.t,true,"già presente il "+ddmm(o.tw.d))).join("")}`;
+  else if(one.length)html+=` ${one.length===1?"C'è una spesa":"Ci sono "+one.length+" spese"} di esattamente ${eur(D)}: controlla sull'estratto della carta: se lì non c'è (o c'è una volta sola ma qui la vedi due volte) eliminala; se c'è, è stata addebitata in un altro estratto e la differenza si compensa nel mese vicino.</div>${one.map(t=>ck(t,false,"")).join("")}`;
+  else if(tail)html+=` Le spese dal ${ddmm(tail)} al ${ddmm(r.to)} fanno esattamente la differenza: probabilmente l'estratto chiude il ${ddmm(shiftDay(tail,-1))} e quelle spese sono nell'estratto dopo. Non sono doppioni.</div>`;
+  else html+=` Non trovo doppioni né una spesa che da sola faccia la differenza: può mancare un rimborso, oppure una spesa è stata importata con l'importo sbagliato.</div>`;
+  if(!exact&&L.length)html+=`<div class="hint" style="margin-top:8px">Spese con lo stesso importo arrivate con due import (non spuntate: da sole non fanno la differenza, possono essere spese vere):</div>${L.map(o=>ck(o.t,false,"stesso importo il "+ddmm(o.tw.d))).join("")}`;
+  if(exact||one.length||L.length)html+=`<div class="btns" style="margin:8px 0 4px"><button class="btn" data-act="cd-del">Elimina gli spuntati</button></div>`;
+  return html}
 function vCardCheck(){
   const hasCard=S.all.some(t=>t.s===FLOWS.carta);
   const cut=cardCut();
