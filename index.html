@@ -517,7 +517,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "75 · 23/11/2026";
+const APP_VERSION = "76 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1050,7 +1050,14 @@ function buildRows(){
   const I=S.imp,g=I.grid,mp=I.map,out=[],seen={},raws=[];
   if(mp.d<0||(mp.a<0&&mp.deb<0&&mp.cre<0)){I.rows=[];return}
   // le altre colonne con una data (data registrazione / operazione / valuta): servono a riconoscere i movimenti già salvati con l'altra data
-  const hcells=(g[I.hdr]||[]).map(c=>norm(c));I.altCols=hcells.map((c,i)=>c&&i!==mp.d&&(COLRE.d.test(c)||COLRE.dv.test(c))?i:-1).filter(i=>i>=0);
+  const hcells=(g[I.hdr]||[]).map(c=>norm(c));
+  if(I.acc&&!I.manualD){const cands=hcells.map((c,i)=>c&&COLRE.d.test(c)?i:-1).filter(i=>i>=0);
+    if(cands.length>1){const ex=new Set(S.all.filter(t=>t.acc===I.acc).map(t=>t.d+"|"+Math.round(t.a*100)));
+      const amt=row=>{let a;if(mp.a>=0)a=num(row[mp.a]);else{const de=mp.deb>=0?num(row[mp.deb]):NaN,cr=mp.cre>=0?num(row[mp.cre]):NaN;a=(isNaN(de)&&isNaN(cr))?NaN:(isNaN(cr)?0:Math.abs(cr))-(isNaN(de)?0:Math.abs(de))}if(I.invert&&mp.a>=0)a=-a;return Math.round(a*100)};
+      const score=i=>{let n=0;for(let r=I.hdr+1;r<g.length;r++){const row=g[r]||[],d=toISO(row[i]),a=amt(row);if(d&&!isNaN(a)&&ex.has(d+"|"+a))n++}return n};
+      const remembered=((S.settings.dateCol||{})[I.acc]||""),pref=i=>(hcells[i]===remembered?2:0)+(/operazione|acquisto|transazione/.test(hcells[i])?1:0);
+      const best=cands.map(i=>({i,s:score(i),p:pref(i)})).sort((x,y)=>y.s-x.s||y.p-x.p)[0];mp.d=best.i;I.dateWhy=best.s?"è quella che fa coincidere i movimenti già salvati":remembered&&hcells[best.i]===remembered?"è quella usata l'ultima volta per questo conto":"è la data dell'operazione"}}
+  I.altCols=hcells.map((c,i)=>c&&i!==mp.d&&(COLRE.d.test(c)||COLRE.dv.test(c))?i:-1).filter(i=>i>=0);
   // primo passaggio: data, importo e testo originale, per numerare i movimenti uguali dello stesso giorno
   for(let r=I.hdr+1;r<g.length;r++){
     const row=g[r]||[];const d=toISO(row[mp.d]);if(!d) continue;
@@ -1089,7 +1096,7 @@ function buildRows(){
     if(fx&&fx.del){I.gone++;continue}
     if(fx) applyFix(tx,fx);
     const e=I.edits[rk];if(e)Object.assign(tx,e);
-    tx.dup=!!(S.byId[id]||known[id]);
+    const exT=S.byId[id]||known[id];tx.dup=!!exT;if(exT)tx.exId=exT.id;
     out.push(tx);
   }
   // doppioni probabili: un aggiornamento dell'estratto può riportare lo stesso movimento con un'altra data (data operazione / contabile, movimento "in corso")
@@ -1098,12 +1105,15 @@ function buildRows(){
   if(I.acc&&I.altCols.length){const ex={},claimed=new Set(out.filter(r=>r.dup).map(r=>r.id));
     for(const t of S.all)if(t.acc===I.acc){const k=Math.round(t.a*100)+"|"+t.d;(ex[k]=ex[k]||[]).push(t)}
     const altOf={};for(const x of raws)altOf[x.key]=x.alts;
-    for(const r of out){if(r.dup)continue;for(const ad of altOf[r.id]||[]){const l=(ex[Math.round(r.a*100)+"|"+ad]||[]).filter(t=>!claimed.has(t.id));if(l.length){claimed.add(l[0].id);r.dup=true;r.altdup={d:ad,m:l[0].m};break}}}}
+    for(const r of out){if(r.dup)continue;for(const ad of altOf[r.id]||[]){const l=(ex[Math.round(r.a*100)+"|"+ad]||[]).filter(t=>!claimed.has(t.id));if(l.length){claimed.add(l[0].id);r.dup=true;r.exId=l[0].id;r.altdup={d:ad,m:l[0].m};break}}}}
   if(I.acc&&out.length){const keep=I.keep||(I.keep={}),ds=out.map(r=>r.d).sort(),dmin=ds[0],dmax=ds[ds.length-1],fk=new Set(out.map(r=>r.id)),used=new Set();
     const cand=S.all.filter(t=>t.acc===I.acc&&t.d>=dmin&&t.d<=dmax&&!fk.has(t.id)&&!fk.has(keyOf(t)));
     for(const r of out){if(r.dup||keep[r.rk])continue;let best=null,bd=99;
       for(const c of cand){if(used.has(c.id)||Math.abs(c.a-r.a)>0.004)continue;const dd=Math.abs(Date.parse(c.d)-Date.parse(r.d))/864e5;if(dd<=5&&dd<bd){bd=dd;best=c}}
-      if(best){used.add(best.id);r.dup=true;r.pdup={d:best.d,m:best.m}}}}
+      if(best){used.add(best.id);r.dup=true;r.exId=best.id;r.pdup={d:best.d,m:best.m}}}}
+  // il file della banca è la verità per i giorni che copre: i movimenti già salvati di questo conto in quei giorni che non corrispondono a nessuna riga sono doppioni di import precedenti (o movimenti annullati)
+  I.stale=[];if(I.acc&&out.length){const ds=out.map(r=>r.d).sort(),a0=ds[0],a1=ds[ds.length-1],hit=new Set(out.map(r=>r.exId).filter(Boolean));
+    I.stale=S.all.filter(t=>t.acc===I.acc&&t.d>=a0&&t.d<=a1&&!hit.has(t.id)&&t.s!==CASH)}
   out.sort(I.sort==="data"?(x,y)=>y.d.localeCompare(x.d):I.sort==="nome"?(x,y)=>String(x.m).localeCompare(String(y.m),"it")||y.d.localeCompare(x.d):(x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
   I.rows=out;
 }
@@ -1170,8 +1180,8 @@ async function aiClassify(){
 
 async function saveImport(){
   const I=S.imp;if(!I) return;
-  const rows=I.rows.filter(r=>!r.dup);
-  if(!rows.length){toast("Nessun movimento nuovo da salvare.");return}
+  const rows=I.rows.filter(r=>!r.dup),stale=I.keepStale?[]:(I.stale||[]);
+  if(!rows.length&&!stale.length){toast("Nessun movimento nuovo da salvare.");return}
   const now=Date.now();
   const list=rows.map((r,i)=>({...r,rk:undefined,dup:undefined,gw:undefined,c:r.k==="spesa"?(r.c||"altro"):null,by:S.uid||undefined,t:now+i}));
   const learn={},known=S.settings.rules||{};
@@ -1180,7 +1190,9 @@ async function saveImport(){
   for(const [rk,e] of Object.entries(I.edits)) if(e.cb==="manuale"&&e.c){const r=I.rows.find(x=>x.rk===rk);if(r) learn[mkey(r.m)]={c:e.c}}
   const btn=$("#saveImp");if(btn)btn.disabled=true;
   try{
-    await putTx(list);
+    if(list.length)await putTx(list);
+    if(stale.length)await delTxList(stale);
+    if(I.acc&&I.map.d>=0&&I.cols[I.map.d]&&(S.settings.dateCol||{})[I.acc]!==norm(I.cols[I.map.d]))await saveSettings({dateCol:{...(S.settings.dateCol||{}),[I.acc]:norm(I.cols[I.map.d])}});
     const fx=[];
     for(const r of rows){const e=I.edits[r.rk];
       if(e&&Object.keys(e).some(n=>["k","c","p","m"].includes(n))&&e.cb!=="Claude") fx.push([r.id,{...fixFields({...r,c:r.k==="spesa"?(r.c||"altro"):null},"manuale")}]);
@@ -1202,7 +1214,7 @@ async function saveImport(){
     await saveSettings(patch);
     const latest=list.map(t=>t.d).sort().pop();
     S.imp=null;showMonth(ymOf(latest));S.view="movs";render();
-    toast("Salvati "+list.length+" movimenti");
+    toast((list.length?"Salvati "+list.length+" movimenti":"Conto aggiornato")+(stale.length?", tolti "+stale.length+" doppioni":""));
   }catch(e){toast(errMsg(e));if(btn)btn.disabled=false}
 }
 
@@ -3057,7 +3069,7 @@ function vImp(){
       <div class="field"><label for="ipb">Sostenuta da</label><select id="ipb">${payerOpts().map(m=>`<option ${I.payer===m?"selected":""}>${h(m)}</option>`).join("")}</select>${I.payerBy?`<p class="hint">${h(I.payerBy)}</p>`:""}</div>
       <div class="field"><label for="iper">Beneficiario predefinito</label><select id="iper">${members().map(m=>`<option ${I.person===m?"selected":""}>${h(m)}</option>`).join("")}</select></div>
     </div>
-    ${I.map.d>=0?`<p class="hint">Data letta dalla colonna «${h(I.cols[I.map.d]||"")}»${(I.altCols||[]).length?`; nel file c'è anche ${I.altCols.map(i=>"«"+h(I.cols[i]||"")+"»").join(", ")}: i movimenti già salvati con quella data vengono riconosciuti${I.rows.some(r=>r.altdup)?` (${I.rows.filter(r=>r.altdup).length} in questo file)`:""}`:""}.</p>`:""}
+    ${I.map.d>=0?`<p class="hint">Data letta dalla colonna «${h(I.cols[I.map.d]||"")}»${I.dateWhy&&(I.altCols||[]).length?` (${h(I.dateWhy)})`:""}${(I.altCols||[]).length?`; nel file c'è anche ${I.altCols.map(i=>"«"+h(I.cols[i]||"")+"»").join(", ")}: i movimenti già salvati con quella data vengono riconosciuti${I.rows.some(r=>r.altdup)?` (${I.rows.filter(r=>r.altdup).length} in questo file)`:""}`:""}.</p>`:""}
     <button class="link" data-act="togglemap">${I.showMap?"Nascondi colonne":"Modifica colonne"}</button>
     ${I.showMap||!mapOk?`<div class="map" style="margin-top:10px">
       <div><label for="m_d">Data</label><select id="m_d" data-m="d">${opt(0,I.map.d)}</select></div>
@@ -3075,11 +3087,14 @@ function vImp(){
     ${I.ai?`<p class="progress">Riconosco i beneficiari… ${I.ai.done}/${I.ai.tot} esercenti${I.searches?", "+I.searches+" ricerche online":""}</p>`:""}
     <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="isort" data-s="importo" aria-pressed="${I.sort!=="data"&&I.sort!=="nome"}">Per importo</button><button data-act="isort" data-s="data" aria-pressed="${I.sort==="data"}">Per data</button><button data-act="isort" data-s="nome" aria-pressed="${I.sort==="nome"}">Per nome</button></div><span class="hint" style="margin:0">Totale spese ${eur(-sum(exp))}</span></div>
     ${fresh.map(r=>pRow(r)).join("")}
+    ${(I.stale||[]).length?`<section class="block" style="margin-top:12px"><h2>Da togliere: ${I.stale.length} movimenti già salvati che il file non ha più</h2><p class="hint">Nel periodo del file (${ddmm(I.rows.map(r=>r.d).sort()[0])}–${ddmm(I.rows.map(r=>r.d).sort().slice(-1)[0])}) la banca non li riporta: sono doppioni di import precedenti (stesso movimento con un'altra data) o movimenti annullati. Totale ${eur(Math.abs(sum(I.stale)))}. Al salvataggio li tolgo, così il conto torna uguale all'estratto.</p>
+      <label class="check"><input type="checkbox" id="keepstale" ${I.keepStale?"checked":""}><span>Non toglierli</span></label>
+      <details style="margin:6px 0 10px"><summary class="hint">Vedi quali sono</summary>${I.stale.slice().sort((a,b)=>b.d.localeCompare(a.d)).map(t=>txRow(t,true)).join("")}</details></section>`:""}
     ${I.rows.some(r=>r.pdup)?`<section class="block" style="margin-top:12px"><h2>Probabili doppioni (${I.rows.filter(r=>r.pdup).length})</h2><p class="hint">Stesso importo di un movimento già salvato, con la data spostata di qualche giorno: di solito è lo stesso movimento riletto con un'altra data. Non li importo; se è davvero una spesa in più tocca «Importa anche questo».</p>${I.rows.filter(r=>r.pdup).map(r=>pRow(r)+`<p class="hint" style="margin:-4px 0 10px">Già salvato il ${ddmm(r.pdup.d)}: ${h(r.pdup.m||"")} · <button class="link" data-act="imp-keep" data-rk="${h(r.rk)}">Importa anche questo</button></p>`).join("")}</section>`:""}
     ${dups-I.rows.filter(r=>r.pdup).length>0?`<details style="margin:10px 0"><summary class="hint">Mostra i ${dups-I.rows.filter(r=>r.pdup).length} già presenti</summary>${I.rows.filter(r=>r.dup&&!r.pdup).map(r=>pRow(r)).join("")}</details>`:""}
     <div class="stick">
       ${noCat?`<button class="btn ghost" data-act="ai" ${I.ai?"disabled":""}>Riconosci con Claude (${noCat})</button>`:""}
-      <button class="btn" id="saveImp" data-act="saveimp" ${fresh.length&&!I.ai&&S.canWrite?"":"disabled"}>Salva ${fresh.length} movimenti</button>
+      <button class="btn" id="saveImp" data-act="saveimp" ${(fresh.length||((I.stale||[]).length&&!I.keepStale))&&!I.ai&&S.canWrite?"":"disabled"}>${fresh.length?`Salva ${fresh.length} movimenti`:"Aggiorna"}${(I.stale||[]).length&&!I.keepStale?` e togli ${I.stale.length} doppioni`:""}</button>
     </div>`}
     ${drop}
   </section>`;
@@ -3611,6 +3626,7 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",async e=>{
   const t=e.target,id=t.id;
   if(id==="file"){handleFile(t.files[0]);t.value="";return}
+  if(id==="keepstale"&&S.imp){S.imp.keepStale=t.checked;render();return}
   if(t.dataset&&t.dataset.dup&&S.dupSel){if(t.checked)S.dupSel.ids.add(t.dataset.dup);else S.dupSel.ids.delete(t.dataset.dup);const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(id==="kscan"&&t.files[0]){const m=$("#kmsg");if(m)m.textContent="Leggo il codice…";try{applyScan(await readCode(t.files[0]))}catch(_){if(m)m.textContent="Lettura non riuscita (serve la rete la prima volta): scrivi il numero."}t.value="";return}
   if(id==="kcol"){if(S.sheet){S.sheet.col=t.value;document.querySelectorAll('[data-act="card-col"]').forEach(b=>b.setAttribute("aria-pressed","false"));const f=t.parentNode;f.style.background=t.value;f.classList.add("on")}return}
@@ -3656,7 +3672,7 @@ document.addEventListener("change",async e=>{
   if(t.dataset.pp){const r=I.rows.find(x=>x.id===t.dataset.pp);if(r){I.edits[r.rk]=Object.assign(I.edits[r.rk]||{},{p:t.value})}buildRows();t.blur();render();return}
   if(id==="iper"){const old=I.person;I.person=t.value;for(const e2 of Object.values(I.edits)) if(e2.p===old) delete e2.p;buildRows();t.blur();render();return}
   if(id==="inv"){I.invert=t.checked;buildRows();render();return}
-  if(t.dataset.m){I.map[t.dataset.m]=Number(t.value);if(t.dataset.m==="a"&&I.map.a>=0){I.map.deb=-1;I.map.cre=-1}if((t.dataset.m==="deb"||t.dataset.m==="cre")&&Number(t.value)>=0)I.map.a=-1;buildRows();t.blur();render();return}
+  if(t.dataset.m){I.map[t.dataset.m]=Number(t.value);if(t.dataset.m==="d")I.manualD=true;if(t.dataset.m==="a"&&I.map.a>=0){I.map.deb=-1;I.map.cre=-1}if((t.dataset.m==="deb"||t.dataset.m==="cre")&&Number(t.value)>=0)I.map.a=-1;buildRows();t.blur();render();return}
   if(t.dataset.pc){
     const r=I.rows.find(x=>x.id===t.dataset.pc);if(!r) return;
     const c=t.value||"";const key=mkey(r.m);
