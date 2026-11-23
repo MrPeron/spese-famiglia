@@ -435,7 +435,7 @@ button.mrow:hover,.mrow.on{background:var(--sunk)}
 .wkc{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 0;color:inherit;font:inherit;cursor:pointer}.wkc:first-of-type{border-top:0}
 .wkc .wkcl{display:block;color:var(--muted);font-size:.85rem}.wkc .wkcl em{font-style:normal;font-size:.75rem;background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:1px 6px;margin-left:4px}
 .wkc>b{display:block;font:800 1.6rem/1.2 var(--display);margin:2px 0 4px}.wkc>b small,.wks{display:inline!important;margin:0!important;font:500 .95rem var(--body);color:var(--muted)}.wkc .neg{color:var(--danger)}.wkc>b.neg{color:var(--danger)}.wkc small{display:block;color:var(--muted);font-size:.82rem;margin-top:4px}
-.qadd{padding:10px 18px}.cprel{border-style:dashed}.catw{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line)}.catw:first-of-type{border-top:0}.catw>.row{flex:1;border-top:0}.catw>.cplus{border:0;cursor:pointer;flex:none}.cbrow{grid-template-columns:12px minmax(0,1fr) auto 28px}.cbp{color:var(--muted);font-weight:500;font-size:.8rem}.cplus{width:28px;height:28px;border-radius:50%;background:var(--sunk);display:grid;place-items:center;font-weight:700;color:var(--primary)}.cbh{font:600 .8rem var(--body);color:var(--muted);margin:12px 0 0;text-transform:uppercase;letter-spacing:.04em}.qtag{background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:0 6px}.qbig{font:700 1.5rem/1.2 var(--display)!important}
+.qadd{padding:10px 18px}.duppair{border-top:1px solid var(--line);padding-top:8px}.duppair:first-of-type{border-top:0}.cprel{border-style:dashed}.catw{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line)}.catw:first-of-type{border-top:0}.catw>.row{flex:1;border-top:0}.catw>.cplus{border:0;cursor:pointer;flex:none}.cbrow{grid-template-columns:12px minmax(0,1fr) auto 28px}.cbp{color:var(--muted);font-weight:500;font-size:.8rem}.cplus{width:28px;height:28px;border-radius:50%;background:var(--sunk);display:grid;place-items:center;font-weight:700;color:var(--primary)}.cbh{font:600 .8rem var(--body);color:var(--muted);margin:12px 0 0;text-transform:uppercase;letter-spacing:.04em}.qtag{background:var(--ochre-soft);color:var(--ochre);border-radius:6px;padding:0 6px}.qbig{font:700 1.5rem/1.2 var(--display)!important}
 .wkgo{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:8px 0 4px;padding:12px 14px;border:1px solid var(--card-bd,var(--line));border-radius:var(--r-card,14px);background:var(--surface);box-shadow:var(--card-sh);color:inherit;text-align:left;cursor:pointer;font:inherit}
 .wkgo small{display:block;color:var(--muted);font-size:.82rem}.wkgo>span:last-child{font-size:1.4rem;color:var(--muted)}
 .wkhero{padding-top:12px}.wkhero small{color:var(--muted);font-size:.85rem}.wkhero>b{display:block;font:800 2rem/1.15 var(--display);margin:2px 0 6px}.wkhero .neg,.wkrow .neg,.row .amt.neg{color:var(--danger)}
@@ -517,7 +517,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "70 · 23/11/2026";
+const APP_VERSION = "71 · 23/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1090,6 +1090,13 @@ function buildRows(){
     tx.dup=!!(S.byId[id]||known[id]);
     out.push(tx);
   }
+  // doppioni probabili: un aggiornamento dell'estratto può riportare lo stesso movimento con un'altra data (data operazione / contabile, movimento "in corso")
+  // se un movimento già salvato dello stesso conto, nel periodo del file, non ha più il suo gemello esatto nel file, e il file ha uno con lo stesso importo a pochi giorni: è lui
+  if(I.acc&&out.length){const keep=I.keep||(I.keep={}),ds=out.map(r=>r.d).sort(),dmin=ds[0],dmax=ds[ds.length-1],fk=new Set(out.map(r=>r.id)),used=new Set();
+    const cand=S.all.filter(t=>t.acc===I.acc&&t.d>=dmin&&t.d<=dmax&&!fk.has(t.id)&&!fk.has(keyOf(t)));
+    for(const r of out){if(r.dup||keep[r.rk])continue;let best=null,bd=99;
+      for(const c of cand){if(used.has(c.id)||Math.abs(c.a-r.a)>0.004)continue;const dd=Math.abs(Date.parse(c.d)-Date.parse(r.d))/864e5;if(dd<=5&&dd<bd){bd=dd;best=c}}
+      if(best){used.add(best.id);r.dup=true;r.pdup={d:best.d,m:best.m}}}}
   out.sort(I.sort==="data"?(x,y)=>y.d.localeCompare(x.d):I.sort==="nome"?(x,y)=>String(x.m).localeCompare(String(y.m),"it")||y.d.localeCompare(x.d):(x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
   I.rows=out;
 }
@@ -1218,7 +1225,7 @@ function vPersonal(){
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...allocation(S.all.filter(t=>ymOf(t.d)===ym&&inPage(t)),ym,ym)})).filter(r=>r.inc||r.spese||r.casa);
   const cap=s=>s[0].toUpperCase()+s.slice(1);
-  return `${pageSeg()}${semBanner()}
+  return `${pageSeg()}${semBanner()}${dupBanner()}
   <section class="hero">
     <div class="lbl">Entrati ${h(perIn())}</div>
     <div class="big num">${h(eurSplit(A.inc)[0])}<small>${h(eurSplit(A.inc)[1])} €</small></div>
@@ -1239,6 +1246,20 @@ function vPersonal(){
   <p class="hint" style="margin:14px 2px">Quadratura dei saldi, estratti carta, conti e grafici sono nella scheda <button class="link" data-nav="check">Verifiche</button>.</p>`;
 }
 // ---------- Verifiche: le informazioni tecniche, per la pagina scelta ----------
+// coppie sospette tra i movimenti salvati: stesso conto e importo, al massimo 5 giorni di distanza, arrivati con due import diversi (nello stesso file sarebbero spese vere)
+function dupPairs(){
+  const key=S.ver+"|"+(S.setVer||0);if(S._dp&&S._dp.k===key)return S._dp.l;
+  const nd=S.settings.notDup||{},vis=new Set(visConti().map(([k])=>k)),by={},out=[],used=new Set();
+  for(const t of S.all){if(!t.acc||!vis.has(t.acc)||!t.t||t.cb==="manuale")continue;const k=t.acc+"|"+Math.round(Math.abs(t.a)*100)+"|"+(t.a<0?"-":"+");(by[k]=by[k]||[]).push(t)}
+  for(const l of Object.values(by)){if(l.length<2)continue;l.sort((a,b)=>a.d.localeCompare(b.d));
+    for(let i=0;i<l.length;i++)for(let j=i+1;j<l.length;j++){const a=l[i],b=l[j];if((Date.parse(b.d)-Date.parse(a.d))/864e5>5)break;
+      if(used.has(a.id)||used.has(b.id)||Math.abs((a.t||0)-(b.t||0))<10*60000)continue;const pk=[a.id,b.id].sort().join("|");if(nd[pk])continue;
+      used.add(a.id);used.add(b.id);out.push((a.t||0)>(b.t||0)?[b,a]:[a,b])}}
+  out.sort((x,y)=>y[1].d.localeCompare(x[1].d));S._dp={k:key,l:out};return out}
+function vDups(){const L=dupPairs();if(!L.length)return "";
+  return `<section class="block" id="dups"><h2>Possibili doppioni (${L.length})</h2><p class="hint">Stesso conto e importo a pochi giorni di distanza, arrivati con due import diversi: spesso è lo stesso movimento importato due volte con date diverse. Controlla e scegli.</p>
+    ${L.map(([a,b])=>`<div class="duppair">${txRow(a,true)}${txRow(b,true)}<div class="btns" style="margin:6px 0 12px"><button class="btn ghost" data-act="dup-del" data-id="${h(b.id)}">Elimina quello del ${ddmm(b.d)}</button><button class="btn ghost" data-act="dup-ok" data-a="${h(a.id)}" data-b="${h(b.id)}">Sono due spese diverse</button></div></div>`).join("")}</section>`}
+function dupBanner(){const n=dupPairs().length;return n?`<div class="banner" style="margin-top:10px">Ci sono ${n} possibili doppioni tra i movimenti importati. <button class="link" data-act="dup-go">Controlla</button></div>`:""}
 function vCheck(){
   if(!S.all.length) return `<p class="hint" style="margin-top:20px">Importa un estratto per vedere le verifiche.</p>`;
   if(isRisp()){
@@ -1249,6 +1270,7 @@ function vCheck(){
   const nm=perMonths().length,fam=isFam(),tx=perTx().filter(inPage),J=fam?null:jointFlows(tx);
   const prel=-sum(tx.filter(t=>t.k==="prelievo")),cashSp=-sum(tx.filter(t=>t.k==="spesa"&&t.s===CASH)),untr=prel-cashSp;
   return `${pageSeg()}
+  ${vDups()}
   ${vMonth(tx,nm,fam,J)}
   ${vBridge(tx,fam,S.lastInc||0,S.lastOut||0)}
   ${vCardCheck()}
@@ -2344,7 +2366,7 @@ function vFamily(){
     :catBudRow(c,v,BB,QQ,SQ);
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...famFlows(ym,ym)})).filter(r=>r.inc||r.spese);
-  return `${pageSeg()}${semBanner()}
+  return `${pageSeg()}${semBanner()}${dupBanner()}
   <section class="hero">
     <div class="lbl">Entrati sul conto di casa ${h(perIn())}</div>
     <div class="big num">${h(eurSplit(F.inc)[0])}<small>${h(eurSplit(F.inc)[1])} €</small></div>
@@ -2405,7 +2427,7 @@ function vSavings(){
   const r=(lab,v,cls,b)=>`<div class="recon num"><span>${b?"<b>"+lab+"</b>":lab}</span><span></span><span class="${cls||""}">${b?"<b>"+v+"</b>":v}</span></div>`;
   const pm=perMonths(),ms=pm.length>1?pm:Array.from({length:6},(_,i)=>shiftYM(S.per.to,i-5));
   const rows=ms.map(ym=>({ym,...patrCalc(ym,ym)})).filter(x=>x.vers||x.intr||x.spent);
-  return `${pageSeg()}${semBanner()}
+  return `${pageSeg()}${semBanner()}${dupBanner()}
   <section class="hero">
     <div class="lbl">Risparmi al ${itDate(P.close)}</div>
     <div class="big num">${h(eurSplit(P.s1)[0])}<small>${h(eurSplit(P.s1)[1])} €</small></div>
@@ -3000,7 +3022,8 @@ function vImp(){
     ${I.ai?`<p class="progress">Riconosco i beneficiari… ${I.ai.done}/${I.ai.tot} esercenti${I.searches?", "+I.searches+" ricerche online":""}</p>`:""}
     <div class="toolbar"><div class="seg sm" role="group" aria-label="Ordina"><button data-act="isort" data-s="importo" aria-pressed="${I.sort!=="data"&&I.sort!=="nome"}">Per importo</button><button data-act="isort" data-s="data" aria-pressed="${I.sort==="data"}">Per data</button><button data-act="isort" data-s="nome" aria-pressed="${I.sort==="nome"}">Per nome</button></div><span class="hint" style="margin:0">Totale spese ${eur(-sum(exp))}</span></div>
     ${fresh.map(r=>pRow(r)).join("")}
-    ${dups?`<details style="margin:10px 0"><summary class="hint">Mostra i ${dups} già presenti</summary>${I.rows.filter(r=>r.dup).map(r=>pRow(r)).join("")}</details>`:""}
+    ${I.rows.some(r=>r.pdup)?`<section class="block" style="margin-top:12px"><h2>Probabili doppioni (${I.rows.filter(r=>r.pdup).length})</h2><p class="hint">Stesso importo di un movimento già salvato, con la data spostata di qualche giorno: di solito è lo stesso movimento riletto con un'altra data. Non li importo; se è davvero una spesa in più tocca «Importa anche questo».</p>${I.rows.filter(r=>r.pdup).map(r=>pRow(r)+`<p class="hint" style="margin:-4px 0 10px">Già salvato il ${ddmm(r.pdup.d)}: ${h(r.pdup.m||"")} · <button class="link" data-act="imp-keep" data-rk="${h(r.rk)}">Importa anche questo</button></p>`).join("")}</section>`:""}
+    ${dups-I.rows.filter(r=>r.pdup).length>0?`<details style="margin:10px 0"><summary class="hint">Mostra i ${dups-I.rows.filter(r=>r.pdup).length} già presenti</summary>${I.rows.filter(r=>r.dup&&!r.pdup).map(r=>pRow(r)).join("")}</details>`:""}
     <div class="stick">
       ${noCat?`<button class="btn ghost" data-act="ai" ${I.ai?"disabled":""}>Riconosci con Claude (${noCat})</button>`:""}
       <button class="btn" id="saveImp" data-act="saveimp" ${fresh.length&&!I.ai&&S.canWrite?"":"disabled"}>Salva ${fresh.length} movimenti</button>
@@ -3481,6 +3504,10 @@ document.addEventListener("click",async e=>{
     try{await putTx([t]);const keepP=C.p,keepK=C.k,keepPB=C.pb;S.cash=newCash();S.cash.p=keepP;S.cash.k=keepK;S.cash.pb=keepPB;showMonth(ymOf(t.d));render();toast(t.k==="spesa"?"Spesa in contanti registrata":"Prelievo registrato")}
     catch(err){toast(errMsg(err));el.disabled=false}
   }
+  else if(act==="imp-keep"){(S.imp.keep||(S.imp.keep={}))[el.dataset.rk]=1;buildRows();render()}
+  else if(act==="dup-go"){S.view="check";render();setTimeout(()=>{const e=$("#dups");if(e)e.scrollIntoView({block:"start"})},50)}
+  else if(act==="dup-del"){const t=S.byId[el.dataset.id];if(t&&confirm("Eliminare il movimento del "+ddmm(t.d)+" ("+(t.m||"")+", "+eur(Math.abs(t.a))+")? Non verrà reimportato.")){try{const k=keyOf(t);await delTx(t);if(k)await saveFixes([[k,{del:1}]]);toast("Doppione eliminato")}catch(err){toast(errMsg(err))}}}
+  else if(act==="dup-ok"){const pk=[el.dataset.a,el.dataset.b].sort().join("|");try{await saveSettings({notDup:{...(S.settings.notDup||{}),[pk]:1}});S.settings.notDup={...(S.settings.notDup||{}),[pk]:1};S._dp=null;render();toast("Segnate come due spese diverse")}catch(err){toast(errMsg(err))}}
   else if(act==="togglemap"){S.imp.showMap=!S.imp.showMap;render()}
   else if(act==="ai") aiClassify();
   else if(act==="saveimp") saveImport();
