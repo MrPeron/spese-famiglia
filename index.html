@@ -518,7 +518,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "81 · 24/11/2026";
+const APP_VERSION = "82 · 24/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1971,6 +1971,7 @@ function budScope(){const l=budScopes();return l.includes(S.budScope)?S.budScope
 function budCanEdit(sc){return isAdmin()||sc===meName()}
 function budId(y,sc){return (y||budYear())+"-"+(sc||budScope())}
 function budDoc(y,sc){return (S.bud||{})[budId(y,sc)]||{}}
+function budFrom(y,sc){return +budDoc(y,sc).from||0}
 function budRowsRaw(y,sc){return Object.entries(budDoc(y,sc).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
 // nel budget di Famiglia i versamenti di ciascuno sono quelli previsti nel suo budget personale (voce "Versamento al conto di casa")
 function budRows(y,sc){const rows=budRowsRaw(y,sc);if(sc!==BFAM||!rows.length)return rows;
@@ -2081,9 +2082,10 @@ function vBudget(){
   const what=sc===BFAM?"del conto di casa: versamenti vostri, spese di casa fisse e variabili, quanto mettere da parte":"di "+h(sc)+": stipendio, spese personali (conti e carte), versamento al conto di casa, risparmio";
   if(!rows.length) return head+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)}.</h1>
     <p>Il budget ${what}, mese per mese. ${ed?"La proposta parte dalle medie degli ultimi 12 mesi importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
-    ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}</section>`;
+    ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}
+    ${ed&&budPartSrc(y,sc)?`<div class="block" style="margin-top:16px;padding-bottom:12px;text-align:left"><h2>Solo da ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())} a dicembre</h2><p class="hint">Copia le voci del budget ${budPartSrc(y,sc)} con gli importi di ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())}${+today().slice(5,7)<12?"–dicembre":""}: i mesi prima restano senza budget. Poi le correggi voce per voce.</p><div class="btns" style="margin:8px 0 0"><button class="btn" data-act="bud-part">Prepara il budget da ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())}</button></div></div>`:""}</section>`;
   const act=budActual(y,sc),done=budMonthsDone(y),val=r=>sel==null?sumArr(r.m):r.m[sel];
-  const actOf=r=>{const a=rowAct(act,r,rows);if(!a)return null;if(sel==null)return done?sumArr(a.slice(0,done)):null;return sel<done?a[sel]:null};
+  const bf=budFrom(y,sc),actOf=r=>{const a=rowAct(act,r,rows);if(!a)return null;if(sel==null)return done>bf?sumArr(a.slice(bf,done)):null;return sel<done&&sel>=bf?a[sel]:null};
   const gt=(g,f)=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+f(r),0),I=gt("in",val),F=gt("fix",val),R_=gt("sav",val),V=gt("var",val),D=I-F-R_,Mg=D-V;
   const marg=Array.from({length:12},(_,i)=>gt("in",r=>r.m[i])-gt("fix",r=>r.m[i])-gt("sav",r=>r.m[i])-gt("var",r=>r.m[i])),mx=Math.max(1,...marg.map(Math.abs));
   const chips=`<div class="chips budm">${[["","Anno"],...MESI.map((m,i)=>[String(i),m])].map(([v,l])=>`<button class="chip" data-act="bud-m" data-m="${v}" aria-pressed="${String(M)===v}">${l}</button>`).join("")}</div>`;
@@ -2094,7 +2096,7 @@ function vBudget(){
       <span class="amt num">${eur(v)}</span></button>`};
   const sec=(k,note)=>{const l=rows.filter(r=>grpOf(r)===k).sort((a,b)=>sumArr(b.m)-sumArr(a.m));if(!l.length&&k!=="sav")return "";const t=l.reduce((x,r)=>x+val(r),0);
     return `<section class="block"><h2 style="display:flex;justify-content:space-between">${BGRP[k]}<span class="num">${eur(t)}</span></h2>${note?`<p class="hint" style="margin-top:-2px">${note}</p>`:""}${l.map(row).join("")}<div style="height:4px"></div></section>`};
-  return `${head}<button class="wkgo" data-nav="wk"><span><b>Il mese</b><small>A che punto sono le spese rispetto al budget</small></span><span aria-hidden="true">›</span></button>${chips}
+  return `${head}${bf?`<p class="banner" style="margin-top:8px">Budget da ${h(MESI_L[bf].toLowerCase())}: i mesi prima non hanno budget e non si confrontano.</p>`:""}<button class="wkgo" data-nav="wk"><span><b>Il mese</b><small>A che punto sono le spese rispetto al budget</small></span><span aria-hidden="true">›</span></button>${chips}
     <section class="block budsum">
       <div class="bs"><span>Entrate</span><b class="num">${E0(I)}</b></div>
       <div class="bs m"><span>− Spese fisse</span><b class="num">${E0(F)}</b></div>
@@ -2165,7 +2167,7 @@ async function quickDel(){const id=S.sheet&&S.sheet.quick;if(!id||id==="new"||!c
 function wkData(sc,ym){
   const y=+ym.slice(0,4),mi=+ym.slice(5,7)-1,by=wkBudYear(y,sc),t0=today(),cur=ymOf(t0);if(by==null)return null;
   // anno senza budget: dalle voci di un altro anno prendo solo l'elenco (per segnare le spese), mai gli importi
-  const noB=by!==y,rows=noB?budRows(by,sc).map(r=>({...r,m:Array(12).fill(0)})):budRows(by,sc),C=budCtx(sc),dim=new Date(y,mi+1,0).getDate(),gs=g=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+r.m[mi],0);
+  const noB=by!==y||mi<budFrom(y,sc),rows=noB?budRows(by,sc).map(r=>({...r,m:Array(12).fill(0)})):budRows(by,sc),C=budCtx(sc),dim=new Date(y,mi+1,0).getDate(),gs=g=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+r.m[mi],0);
   const V=gs("var"),F=gs("fix"),I=gs("in"),R_=gs("sav"),Mg=I-F-R_-V;
   const lastD=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,""),closed=lastD>=ym+"-"+String(dim).padStart(2,"0");
   const dlOf={};for(const x of dls())for(const p of x.paid||[])if(p.tx)dlOf[p.tx]=x.id;
@@ -2246,7 +2248,7 @@ function casaMonth(){
       :`<button class="row cbrow" data-act="wk-open" data-p="${h(D.sc)}">${inner}<span class="cplus" aria-hidden="true" style="visibility:hidden">+</span></button>`};
   return `<section class="block wkcasa"><h2 style="display:flex;justify-content:space-between;align-items:center">Budget di ${h(mese)}<button class="link" data-act="wk-open" data-p="${h(D.sc)}" style="font-size:.9rem">Dettaglio ›</button></h2>
     ${seg}${nb?`<div class="wkc" style="cursor:default"><span class="wkcl">Speso nel mese</span><b class="num">${E0(D.spent)}</b>
-      <small>Il ${D.y} non ha un budget: qui vedi solo le spese. Il confronto parte con il budget del ${D.y+1}.</small></div>`:`<div class="wkc" style="cursor:default"><span class="wkcl">Speso nel mese</span>
+      <small>${D.by===D.y?`Il budget ${D.y} parte da ${MESI_L[budFrom(D.y,D.sc)].toLowerCase()}: questo mese vedi solo le spese.`:`Il ${D.y} non ha un budget: qui vedi solo le spese. Il confronto parte con il budget del ${D.y+1}.`}</small></div>`:`<div class="wkc" style="cursor:default"><span class="wkcl">Speso nel mese</span>
       <b class="num">${E0(D.spent)}<small> su ${E0(D.plan)}</small></b><span class="bpb"><i class="${left<0?"ko":""}" style="width:${Math.min(100,pct)}%"></i></span>
       <small>${left<0?`<span class="neg">sforato di ${E0(-left)}</span>`:`restano ${E0(left)}`} · ${D.daysLeft} giorni alla fine</small></div>`}
     <h3 class="cbh">Tocca una categoria per segnare una spesa</h3>
@@ -2267,7 +2269,7 @@ function vWeek(){
       <span class="bpb"><i class="${left<0?"ko":""}" style="width:${Math.min(100,plan>0?spent/plan*100:100)}%"></i></span>
       <p class="hint" style="margin:6px 0 0">${left<0?`<span class="neg">Sforato di ${E0(-left)}</span>`:`${past?"Avanzati":"Restano"} ${E0(left)}`}${live&&left>0&&V-sV>0?` · per le variabili ${E0(V-sV)}, circa ${E0((V-sV)/daysLeft)} al giorno per ${daysLeft} giorni`:""}</p>
       <p class="hint" style="margin:2px 0 10px">Fisse ${E0(sF)} su ${E0(F)} · variabili ${E0(sV)} su ${E0(V)}</p></section>`;
-  const prev=noB?`<p class="banner" style="margin-top:8px">Il ${y} non ha un budget: qui vedi solo le spese del mese, senza confronto. Il confronto con il budget parte dai mesi del ${by}.</p>`:"";
+  const bf0=by===y?budFrom(y,sc):0,prev=noB?`<p class="banner" style="margin-top:8px">${bf0?`Il budget ${y} parte da ${MESI_L[bf0].toLowerCase()}: per ${MESI_L[mi].toLowerCase()} vedi solo le spese, senza confronto.`:`Il ${y} non ha un budget: qui vedi solo le spese del mese, senza confronto. Il confronto con il budget parte dai mesi del ${by}.`}</p>`:"";
   const stale=!closed&&(live||lastD<ym+"-31")?`<p class="hint">Estratti importati fino al ${lastD?ddmm(lastD):"—"}: quello che spendi dopo segnalalo con «+ Spesa al volo». Quando importi, l'app riconosce le spese già segnate e non le conta due volte.</p>`:closed?`<p class="hint">Mese importato: i numeri sono quelli dei movimenti, come nel consuntivo del budget.</p>`:"";
   const vr=rows.filter(r=>grpOf(r)==="var"),vByK={};for(const o of vt)vByK[o.k]=(vByK[o.k]||0)+o.v;
   const vitems=vr.map(r=>({t:r.t,c:r.c,p:r.m[mi],a:r.src==="in:other"?0:(vByK[r.src]||0)}));const known=new Set(vr.map(r=>r.src));
@@ -2285,7 +2287,7 @@ function vWeek(){
   return head+prev+hero+stale+vsec+fsec+qsec+sum;
 }
 // budget per categoria nel periodo scelto (Riepilogo): somma dei mesi, dal budget dell'anno o da quello più vicino
-function perCatBud(sc){const B={},ys=new Set();for(const ym of perMonths()){const y=+ym.slice(0,4),by=wkBudYear(y,sc);if(by==null||by!==y)continue;const mi=+ym.slice(5,7)-1;
+function perCatBud(sc){const B={},ys=new Set();for(const ym of perMonths()){const y=+ym.slice(0,4),by=wkBudYear(y,sc);if(by==null||by!==y)continue;const mi=+ym.slice(5,7)-1;if(mi<budFrom(y,sc))continue;
   for(const r of budRows(by,sc))if(r.k==="out"&&r.c&&r.s!=="casa"&&r.m[mi])B[r.c]=(B[r.c]||0)+r.m[mi]}B._ys=[...ys];return B}
 // spese al volo del periodo non ancora trovate nell'estratto (a mese chiuso e importato contano solo i movimenti)
 function perQuick(sc){const qm=quickMatch(),o={},lastD=S.all.filter(t=>t.s!==CASH).reduce((m,t)=>t.d>m?t.d:m,"");
@@ -2341,9 +2343,17 @@ async function budSaveRow(){
 }
 async function budWrite(y,sc,patch,msg){
   const key=budId(y,sc),cur=budDoc(y,sc),rows={...(cur.rows||{})};for(const [k,v] of Object.entries(patch.rows||{}))if(v===null)delete rows[k];else rows[k]=v;
-  S.bud={...(S.bud||{}),[key]:{...cur,y,sc,rows}};closeSheet();render();if(msg)toast(msg);
+  const fr=patch.from!=null?{from:patch.from}:{};
+  S.bud={...(S.bud||{}),[key]:{...cur,y,sc,rows,...fr}};closeSheet();render();if(msg)toast(msg);
   const fsRows={};for(const [k,v] of Object.entries(patch.rows||{}))fsRows[k]=v===null?deleteField():v;
-  try{await setDoc(doc(S.db,"budget",key),{y,sc,rows:fsRows,upd:new Date().toISOString(),by:S.uid||""},{merge:true})}catch(err){toast(errMsg(err))}
+  try{await setDoc(doc(S.db,"budget",key),{y,sc,rows:fsRows,...fr,upd:new Date().toISOString(),by:S.uid||""},{merge:true})}catch(err){toast(errMsg(err))}
+}
+// budget dell'anno in corso partito a metà: voci e importi dello stesso mese dal budget più vicino (di solito l'anno dopo)
+function budPartSrc(y,sc){if(y!==+today().slice(0,4)||+today().slice(5,7)===1)return null;const by=wkBudYear(y,sc);return by!=null&&by!==y?by:null}
+async function budDoPart(){
+  const y=budYear(),sc=budScope(),src=budPartSrc(y,sc);if(src==null)return;const from=+today().slice(5,7)-1,rows={};
+  for(const r of budRowsRaw(src,sc)){const {id,...o}=r;rows[id]={...o,m:r.m.map((v,i)=>i<from?0:v)}}
+  await budWrite(y,sc,{rows,from},`Budget ${y} da ${MESI_L[from].toLowerCase()}: voci copiate dal ${src}, correggile se serve`);
 }
 async function budDoPropose(){
   const y=budYear(),sc=budScope(),P=budPropose(y,sc);if(!P){toast("Servono movimenti importati per fare la proposta.");return}
@@ -3471,6 +3481,7 @@ document.addEventListener("click",async e=>{
   else if(act==="bud-hist"){const hh=S.sheet&&S.sheet.hist;if(!hh)return;for(let i=0;i<12;i++)$("#bm"+i).value=hh[i]?fmtNum(hh[i]):"";$("#btot").value=fmtNum(sumArr(hh));toast("Importi distribuiti come negli ultimi 12 mesi: salva per tenerli")}
   else if(act==="bud-eq"){const v=num($("#btot").value||"");if(isNaN(v)){toast("Scrivi il totale dell'anno.");return}const m=Math.round(v/12*100)/100;for(let i=0;i<12;i++)$("#bm"+i).value=fmtNum(i<11?m:Math.round((v-m*11)*100)/100)}
   else if(act==="bud-propose") budDoPropose();
+  else if(act==="bud-part") budDoPart();
   else if(act==="bud-xlsx") budXlsx();
   else if(act==="go-imp"){closeSheet();S.view="imp";render();window.scrollTo(0,0)}
   else if(act==="ev-open") openEv(el.dataset.id,el.dataset.s);
