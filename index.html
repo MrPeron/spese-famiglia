@@ -520,7 +520,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "89 · 26/11/2026";
+const APP_VERSION = "90 · 26/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1892,7 +1892,7 @@ function evForm(id,d){
   openSheet(`<h3>${id?"Modifica evento":"Nuovo evento"}</h3>
     <div class="field"><label for="et">Cosa</label><input id="et" value="${h(x.t||"")}" placeholder="Matrimonio di Giulia" autocomplete="off"></div>
     <div class="two"><div class="field" style="margin-top:0"><label for="ed">Giorno</label>${dateInput("ed",x.d||"","Giorno")}</div>
-      <div class="field" style="margin-top:0"><label for="eh">Ora (facoltativa)</label><input id="eh" value="${h(x.time||"")}" placeholder="16:30" inputmode="numeric" autocomplete="off"></div></div>
+      <div class="field" style="margin-top:0"><label for="eh">Ora (facoltativa)</label><input id="eh" value="${h(x.time||"")}" placeholder="16:30" inputmode="numeric" maxlength="5" autocomplete="off"><p class="hint">Scrivi solo le cifre: 1630 diventa 16:30, 930 diventa 9:30.</p></div></div>
     <div class="two"><div class="field" style="margin-top:0"><label for="ed2">Fino al (se dura più giorni)</label>${dateInput("ed2",x.d2||"","Fino al")}</div>
       <div class="field" style="margin-top:0"><label for="er">Si ripete</label><select id="er">${Object.entries(EV_REP).map(([k,l])=>opt(k,k==="y1"?"Ogni anno (compleanni…)":l,x.rep||"")).join("")}</select></div></div>
     <div class="field"><span class="lab">Chi partecipa</span><div class="chips">${members().map(m=>`<button class="chip" data-act="ev-who" data-m="${h(m)}" aria-pressed="${(x.who||[]).includes(m)}">${h(m)}</button>`).join("")}</div></div>
@@ -1903,7 +1903,7 @@ function evForm(id,d){
 }
 async function saveEv(){
   const sh=S.sheet;if(!sh||!sh.evEdit)return;
-  const t=$("#et").value.trim(),d=readDate("ed"),d2=readDate("ed2"),tm=$("#eh").value.trim().replace(/[.,]/,":");
+  const t=$("#et").value.trim(),d=readDate("ed"),d2=readDate("ed2"),tm=timeMask($("#eh").value.trim().replace(/[.,\s]/,":"));
   if(!t){toast("Scrivi cos'è l'evento.");return}
   if(!d){toast("Giorno non valido: scrivilo come gg/mm/aaaa.");return}
   if($("#ed2").value.trim()&&(!d2||d2<d)){toast("La data di fine dev'essere dopo l'inizio.");return}
@@ -3766,7 +3766,11 @@ document.addEventListener("click",async e=>{
     $("#le").blur();render();
   }
 });
+// ora scritta con il tastierino numerico (senza i due punti): 1630 → 16:30, 930 → 9:30
+function timeMask(v){if(v.includes(":"))return v;const d=v.replace(/\D/g,"").slice(0,4);if(d.length<3)return d;
+  return d.length===3&&+d[0]>2?d[0]+":"+d.slice(1):d.slice(0,2)+":"+d.slice(2)}
 document.addEventListener("input",e=>{
+  if(e.target.id==="eh"&&!(e.inputType||"").startsWith("delete")){const v=e.target.value,m=v.includes(":")?v.replace(/[^\d:]/g,""):timeMask(v);if(m!==v)e.target.value=m}
   if(e.target.classList&&e.target.classList.contains("dinp")&&!(e.inputType||"").startsWith("delete")){dateMask(e.target);const p=e.target.parentNode.querySelector("input[type=date]"),v=readDate(e.target.id);if(p&&v)p.value=v}
   if(e.target.type==="date"&&e.target.dataset.for){const t=$("#"+e.target.dataset.for);if(t&&e.target.value){t.value=itDate(e.target.value);t.dispatchEvent(new Event("change",{bubbles:true}))}}
   if(e.target.id==="qm"&&S.sheet&&S.sheet.quick&&!S.sheet.cTouched){const g=autoCat({m:e.target.value,x:""});if(g&&g.c&&$("#qc"))$("#qc").value=g.c}
