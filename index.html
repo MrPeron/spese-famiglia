@@ -520,7 +520,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "87 · 26/11/2026";
+const APP_VERSION = "88 · 26/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1961,14 +1961,16 @@ const BSEC={in:"Entrate",cat:"Spese per categoria",dl:"Scadenze",extra:"Straordi
 // raggruppamento per governare il mese: le fisse arrivano comunque, le variabili si possono gestire, il risparmio si toglie prima
 const BGRP={in:"Entrate",fix:"Spese fisse",var:"Spese variabili",sav:"Obiettivo di risparmio"};
 const FIX_CATS=new Set(["mutuo","casa","banca","abbonamenti"]);
-const BFAM="Famiglia";
+const BFAM="Famiglia",BRIS="Risparmio";
 function fxOf(r){if(r.fx)return r.fx;if(r.s==="dl"||r.s==="casa")return "fissa";if(r.s==="extra")return "variabile";return r.c&&(FIX_CATS.has(r.c)||catType(r.c)==="fissa")?"fissa":"variabile"}
 function grpOf(r){return r.k==="in"?"in":r.k==="sav"?"sav":fxOf(r)==="fissa"?"fix":"var"}
 function rowSec(r){return r.k==="in"?"in":r.k==="sav"?"sav":(r.s||"cat")}
 function sumArr(a){return a.reduce((x,v)=>x+(+v||0),0)}
 function budYear(){return S.budYear||(+today().slice(5,7)>=10?+today().slice(0,4)+1:+today().slice(0,4))}
 // budget visibili: chi amministra vede tutti; gli altri il proprio e quello di famiglia
-function budScopes(){return isAdmin()?[...payers(),BFAM]:[meName(),BFAM]}
+function budScopes(){return isAdmin()?[...payers(),BFAM,BRIS]:[meName(),BFAM]}
+// "Il mese" non ha senso per il risparmio: solo i budget personali e di famiglia
+function budScopesWk(){return budScopes().filter(x=>x!==BRIS)}
 function budScope(){const l=budScopes();return l.includes(S.budScope)?S.budScope:(l.includes(meName())?meName():l[0])}
 function budCanEdit(sc){return isAdmin()||sc===meName()}
 function budId(y,sc){return (y||budYear())+"-"+(sc||budScope())}
@@ -1982,10 +1984,52 @@ async function budRestore(){const y=budYear(),sc=budScope(),c=budKeepFor(y,sc);i
 function budFrom(y,sc){return +budDoc(y,sc).from||0}
 function budRowsRaw(y,sc){return Object.entries(budDoc(y,sc).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
 // nel budget di Famiglia i versamenti di ciascuno sono quelli previsti nel suo budget personale (voce "Versamento al conto di casa")
-function budRows(y,sc){const rows=budRowsRaw(y,sc);if(sc!==BFAM||!rows.length)return rows;
+function budRows(y,sc){const rows=budRowsRaw(y,sc);if(sc===BRIS)return risRows(y,rows);if(sc!==BFAM||!rows.length)return rows;
   for(const p of payers()){const pr=budRowsRaw(y,p).filter(r=>r.s==="casa");if(!pr.length)continue;const m=Array(12).fill(0);pr.forEach(r=>r.m.forEach((v,i)=>m[i]+=v));
     let r=rows.find(x=>x.src==="in:vers:"+p);if(!r){r={id:"in-"+hash(p),t:"Versamento di "+p,k:"in",src:"in:vers:"+p};rows.push(r)}r.m=m;r.link=p}
   return rows}
+// ---------- Budget del risparmio: entra l'obiettivo di risparmio degli altri budget, escono vacanze e straordinarie ----------
+function risRows(y,rows){if(!rows.length)return rows;
+  for(const p of [...payers(),BFAM]){const m=Array(12).fill(0);for(const r of budRows(y,p))if(r.k==="sav")r.m.forEach((v,i)=>m[i]+=v);if(!sumArr(m))continue;
+    rows.push({id:"in-sav-"+hash(p),t:p===BFAM?"Dal conto di casa":"Da "+p,k:"in",src:"in:sav:"+p,m,link:p})}
+  return rows}
+// saldo di tutti i risparmi (conti patrimonio, vincoli, linea libera) a una data; null se manca qualche saldo
+function savTotAt(d){let s=0,ok=false;
+  for(const [k,v] of contoList()){if(v.t==="carta")continue;
+    if(ruolo(k)==="patrimonio"){const b=balAt(k,d);if(b==null)return null;s+=b;ok=true}
+    else{if(v.vinc){s+=vincAt(k,d);ok=true}if(v.lib){s+=libAt(k,d);ok=true}}}
+  return ok?s:null}
+function risStartAuto(y){const d=(y-1)+"-12-31";return d<today()?{v:savTotAt(d),l:"saldo dei risparmi al 31/12/"+(y-1)}:{v:savTotAt(today()),l:"saldo dei risparmi di oggi"}}
+function risStart(y){const v=budDoc(y,BRIS).start;return v!=null?{v:+v,l:"impostato da te"}:risStartAuto(y)}
+async function risCreate(){const y=budYear(),z=Array(12).fill(0);
+  await budWrite(y,BRIS,{rows:{"r-viaggi":{t:"Viaggi e vacanze",k:"out",s:"cat",c:"viaggi",fx:"variabile",m:z},"r-stra":{t:"Spese straordinarie",k:"out",s:"extra",fx:"variabile",m:z}}},`Budget del risparmio ${y} creato: metti gli importi nelle uscite`)}
+function vBudRis(y,rows,ed,head,chips){
+  const sel=S.budM===""||S.budM==null?null:+S.budM,val=r=>sel==null?sumArr(r.m):r.m[sel],st=risStart(y),s0=st.v||0;
+  const ins=rows.filter(r=>r.k==="in"),outs=rows.filter(r=>r.k!=="in"),mi=i=>sumArr(ins.map(r=>r.m[i]))-sumArr(outs.map(r=>r.m[i]));
+  const fondo=[];let f=s0;for(let i=0;i<12;i++){f+=mi(i);fondo.push(f)}
+  const real=MESI.map((_,i)=>{const d=y+"-"+String(i+1).padStart(2,"0")+"-"+String(new Date(y,i+1,0).getDate()).padStart(2,"0");if(d>today()&&(y+"-"+String(i+1).padStart(2,"0"))!==ymOf(today()))return null;return savTotAt(d<today()?d:today())});
+  const mx=Math.max(1,...fondo.map(Math.abs),...real.filter(v=>v!=null).map(Math.abs));
+  const I=ins.reduce((x,r)=>x+val(r),0),O=outs.reduce((x,r)=>x+val(r),0),fEnd=sel==null?fondo[11]:fondo[sel],fBeg=sel==null||sel===0?s0:fondo[sel-1];
+  const bars=`<div class="budbars">${fondo.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: fondo previsto ${eur(v)}${real[i]!=null?", reale "+eur(real[i]):""}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
+  const row=r=>`<button class="row brow" data-act="bud-row" data-id="${h(r.id)}">${r.c?catDot(r.c):`<i class="dot" style="background:${r.k==="in"?"var(--ok)":"var(--muted)"}"></i>`}
+      <span style="min-width:0"><span class="dlt">${h(r.t)}</span>${r.link?`<span class="hint" style="display:block;margin:0">Obiettivo di risparmio del budget ${r.link===BFAM?"di Famiglia":"di "+h(r.link)}</span>`:""}${r.note?`<span class="hint bnl">✎ ${h(r.note)}</span>`:""}</span>
+      <span class="amt num">${eur(val(r))}</span></button>`;
+  const per=sel==null?"nell'anno":"in "+MESI_L[sel].toLowerCase();
+  return `${head}${chips}
+    <section class="block budsum">
+      <div class="bs"><span>${sel==null||sel===0?"Saldo di partenza":"Fondo a inizio "+MESI_L[sel].toLowerCase()}</span><b class="num">${E0(fBeg)}</b></div>
+      <div class="bs"><span>+ Versamenti previsti ${per}</span><b class="num">${E0(I)}</b></div>
+      <div class="bs m"><span>− Uscite previste ${per}</span><b class="num">${E0(O)}</b></div>
+      <div class="bs tot"><span>= Fondo previsto a fine ${sel==null?"anno":MESI_L[sel].toLowerCase()}</span><b class="num" style="color:${fEnd<0?"var(--danger)":"var(--ok)"}">${E0(fEnd)}</b></div>
+      ${sel!=null&&real[sel]!=null?`<div class="bs"><span>Saldo reale dei risparmi${sel===+today().slice(5,7)-1&&y===+today().slice(0,4)?" oggi":" a fine mese"}</span><b class="num">${E0(real[sel])}</b></div>`:""}
+      <div style="height:8px"></div>
+    </section>
+    <section class="block"><h2>Fondo mese per mese</h2>${bars}<p class="hint" style="padding-bottom:8px">Quanto resta nei risparmi a fine mese: saldo di partenza più i versamenti, meno le uscite previste. In rosso i mesi in cui non bastano.${real.some(v=>v!=null)?" Tocca un mese per vedere anche il saldo reale.":""}</p></section>
+    <section class="block"><h2>Saldo di partenza</h2>
+      ${ed?`<div class="two" style="margin:4px 0 6px"><input id="bstart" inputmode="decimal" value="${st.v!=null?fmtNum(Math.round(st.v)):""}" placeholder="0"><button class="btn ghost" data-act="bud-start">Salva</button></div>`:`<p class="num" style="margin:4px 0">${eur(s0)}</p>`}
+      <p class="hint" style="padding-bottom:8px">${st.v==null?"Manca il saldo di qualche conto di risparmio: scrivilo tu.":st.l==="impostato da te"?`Impostato da te. Saldo calcolato dai conti: ${(()=>{const a=risStartAuto(y);return a.v==null?"non disponibile":eur(a.v)+" ("+a.l+")"})()}.`:`Calcolato: ${st.l} (conti di risparmio, vincoli e linea libera). Si aggiorna da solo finché non scrivi tu un importo.`}</p></section>
+    <section class="block"><h2 style="display:flex;justify-content:space-between">Versamenti<span class="num">${eur(I)}</span></h2><p class="hint" style="margin-top:-2px">Arrivano da soli dall'«Obiettivo di risparmio» degli altri budget: per cambiarli modifica quelle voci.</p>${ins.map(row).join("")||`<p class="hint">Nessun obiettivo di risparmio negli altri budget del ${y}.</p>`}<div style="height:4px"></div></section>
+    <section class="block"><h2 style="display:flex;justify-content:space-between">Uscite dai risparmi<span class="num">${eur(O)}</span></h2><p class="hint" style="margin-top:-2px">Vacanze, spese straordinarie, acquisti grossi: mettile nel mese in cui pensi di pagarle.</p>${outs.sort((a,b)=>sumArr(b.m)-sumArr(a.m)).map(row).join("")}<div style="height:4px"></div></section>`}
 function rowAct(act,r,rows){
   if(r.src==="in:other"&&rows){const own=new Set(rows.map(x=>x.src));const a=Array(12).fill(0);let any=false;for(const [k,v] of Object.entries(act))if(k.startsWith("in:")&&!k.startsWith("in:vers:")&&k!=="in:casa"&&!own.has(k)){any=true;v.forEach((x,i)=>a[i]+=x)}return any?a:null}
   return act[r.src]||act[r.dl?"dl:"+r.dl:""]||null}
@@ -2089,15 +2133,20 @@ function vBudget(){
   const head=`${seg}<div class="calhead"><button class="iconbtn" data-act="bud-y" data-d="-1" aria-label="Anno precedente">‹</button><b>Budget ${y}</b><button class="iconbtn" data-act="bud-y" data-d="1" aria-label="Anno successivo">›</button></div>`;
   const what=sc===BFAM?"del conto di casa: versamenti vostri, spese di casa fisse e variabili, quanto mettere da parte":"di "+h(sc)+": stipendio, spese personali (conti e carte), versamento al conto di casa, risparmio";
   const kc=ed&&budKeepFor(y,sc);
-  if(!rows.length) return head+(kc?`<section class="block" style="margin-top:12px;padding-bottom:12px"><h2>C'è una copia su questo dispositivo</h2><p class="hint">Questo dispositivo ha conservato ${Object.keys(kc.rows).length} voci del budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)} (viste il ${h(new Date(kc.at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(", "," alle "))}). Puoi rimetterle nel budget.</p><div class="btns" style="margin:8px 0 0"><button class="btn" data-act="bud-restore">Ripristina le voci</button></div></section>`:"")+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)}.</h1>
+  if(sc===BRIS&&!rows.length&&!kc)return head+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} del risparmio.</h1>
+    <p>Il fondo da cui paghi vacanze e spese straordinarie: entra quello che gli altri budget mettono da parte («Obiettivo di risparmio»), escono le spese grosse che prevedi, mese per mese. Così vedi se il fondo basta.</p>
+    ${ed?`<div class="btns"><button class="btn" data-act="bud-ris">Crea il budget del risparmio</button></div>`:""}</section>`;
+  if(!rows.length) return head+(kc?`<section class="block" style="margin-top:12px;padding-bottom:12px"><h2>C'è una copia su questo dispositivo</h2><p class="hint">Questo dispositivo ha conservato ${Object.keys(kc.rows).length} voci del budget ${y} ${sc===BFAM?"della famiglia":sc===BRIS?"del risparmio":"di "+h(sc)} (viste il ${h(new Date(kc.at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(", "," alle "))}). Puoi rimetterle nel budget.</p><div class="btns" style="margin:8px 0 0"><button class="btn" data-act="bud-restore">Ripristina le voci</button></div></section>`:"")+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)}.</h1>
     <p>Il budget ${what}, mese per mese. ${ed?"La proposta parte dalle medie degli ultimi 12 mesi importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
-    ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}
+    ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">${sc===BRIS?"Crea il budget del risparmio":"Crea la proposta"}</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}
     ${ed&&budPartSrc(y,sc)?`<div class="block" style="margin-top:16px;padding-bottom:12px;text-align:left"><h2>Solo da ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())} a dicembre</h2><p class="hint">Copia le voci del budget ${budPartSrc(y,sc)} con gli importi di ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())}${+today().slice(5,7)<12?"–dicembre":""}: i mesi prima restano senza budget. Poi le correggi voce per voce.</p><div class="btns" style="margin:8px 0 0"><button class="btn" data-act="bud-part">Prepara il budget da ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())}</button></div></div>`:""}</section>`;
+  const chips=`<div class="chips budm">${[["","Anno"],...MESI.map((m,i)=>[String(i),m])].map(([v,l])=>`<button class="chip" data-act="bud-m" data-m="${v}" aria-pressed="${String(M)===v}">${l}</button>`).join("")}</div>`;
+  const notes=`${ed||budDoc(y,sc).note?`<section class="block"><h2>Note sul budget ${y}</h2>${ed?`<textarea id="budnote" rows="4" style="margin:4px 0 8px" placeholder="Cosa hai considerato per questo budget: ipotesi, cambi previsti, spese messe da parte, cosa ricontrollare">${h(budDoc(y,sc).note||"")}</textarea><div class="btns" style="margin:0 0 12px"><button class="btn ghost" data-act="bud-note" style="padding:8px 14px">Salva le note</button></div>`:`<p class="bnote" style="margin-bottom:12px">${h(budDoc(y,sc).note)}</p>`}</section>`:""}`;
+  if(sc===BRIS)return vBudRis(y,rows,ed,head,chips)+notes+`<div class="btns" style="margin-top:14px">${ed?`<button class="btn ghost" data-act="bud-add">+ Uscita</button>`:""}<button class="btn ghost" data-act="bud-xlsx">Scarica Excel</button></div>`;
   const act=budActual(y,sc),done=budMonthsDone(y),val=r=>sel==null?sumArr(r.m):r.m[sel];
   const bf=budFrom(y,sc),actOf=r=>{const a=rowAct(act,r,rows);if(!a)return null;if(sel==null)return done>bf?sumArr(a.slice(bf,done)):null;return sel<done&&sel>=bf?a[sel]:null};
   const gt=(g,f)=>rows.filter(r=>grpOf(r)===g).reduce((x,r)=>x+f(r),0),I=gt("in",val),F=gt("fix",val),R_=gt("sav",val),V=gt("var",val),D=I-F-R_,Mg=D-V;
   const marg=Array.from({length:12},(_,i)=>gt("in",r=>r.m[i])-gt("fix",r=>r.m[i])-gt("sav",r=>r.m[i])-gt("var",r=>r.m[i])),mx=Math.max(1,...marg.map(Math.abs));
-  const chips=`<div class="chips budm">${[["","Anno"],...MESI.map((m,i)=>[String(i),m])].map(([v,l])=>`<button class="chip" data-act="bud-m" data-m="${v}" aria-pressed="${String(M)===v}">${l}</button>`).join("")}</div>`;
   const bars=`<div class="budbars">${marg.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: margine ${eur(v)}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
   const row=r=>{const v=val(r),a=actOf(r),over=a!=null&&(r.k==="in"?a<v*0.95:a>v*1.05);
     return `<button class="row brow" data-act="bud-row" data-id="${h(r.id)}">${r.c?catDot(r.c):`<i class="dot" style="background:${r.k==="in"?"var(--ok)":r.k==="sav"?"#378ADD":"var(--muted)"}"></i>`}
@@ -2118,7 +2167,7 @@ function vBudget(){
     <section class="block"><h2>Margine mese per mese</h2>${bars}<p class="hint" style="margin:0">Quanto avanza dopo fisse, risparmio e variabili previste. In rosso i mesi in cui il budget non sta in piedi.</p>
       <p class="hint" style="padding-bottom:8px">${done?`Consuntivo disponibile fino a ${MESI[done-1].toLowerCase()} ${y}: sotto ogni voce c'è il reale.`:`Il confronto con il reale compare man mano che importi i mesi del ${y}.`}</p></section>
     ${sec("in")}${sec("fix",sc===BFAM?"Arrivano comunque: mutuo, utenze, assicurazioni, scadenze di casa.":"Arrivano comunque: rate, abbonamenti, scadenze, il versamento al conto di casa.")}${sec("sav","Si mette da parte all'inizio del mese, non con quello che avanza.")}${sec("var","Quelle che si possono governare durante il mese.")}
-    ${ed||budDoc(y,sc).note?`<section class="block"><h2>Note sul budget ${y}</h2>${ed?`<textarea id="budnote" rows="4" style="margin:4px 0 8px" placeholder="Cosa hai considerato per questo budget: ipotesi, cambi previsti, spese messe da parte, cosa ricontrollare">${h(budDoc(y,sc).note||"")}</textarea><div class="btns" style="margin:0 0 12px"><button class="btn ghost" data-act="bud-note" style="padding:8px 14px">Salva le note</button></div>`:`<p class="bnote" style="margin-bottom:12px">${h(budDoc(y,sc).note)}</p>`}</section>`:""}
+    ${notes}
     <div class="btns" style="margin-top:14px">${ed?`<button class="btn ghost" data-act="bud-add">+ Voce</button>`:""}<button class="btn ghost" data-act="bud-xlsx">Scarica Excel</button>${ed?`<button class="btn ghost" data-act="bud-propose">Rifai la proposta</button>`:""}</div>
     <p class="hint">Contano solo i movimenti dei conti ${sc===BFAM?"cointestati correnti (conto di casa)":"e delle carte di "+h(sc)}. Le scadenze del Calendario con importo entrano nel mese in cui cadono, nel budget della persona indicata in "Per chi" (le altre in Famiglia); controlla che una stessa spesa non compaia due volte (es. un'assicurazione sia come scadenza sia nella sua categoria).</p>`;
 }
@@ -2277,8 +2326,9 @@ function casaMonth(){
     <p class="hint" style="margin:0 0 10px">${D.lastD?`Estratti importati fino al ${ddmm(D.lastD)}; `:""}quello che spendi dopo segnalalo qui. Quando importi, le spese segnate vengono riconosciute e non contano due volte.</p></section>`;
 }
 function vWeek(){
+  if(budScope()===BRIS)S.budScope=budScopesWk().includes(meName())?meName():budScopesWk()[0];
   const sc=budScope(),ym=wkYm(),y=+ym.slice(0,4),mi=+ym.slice(5,7)-1,D=wkData(sc,ym);
-  const seg=`<div class="seg pages" style="grid-template-columns:repeat(${budScopes().length},1fr)" role="group" aria-label="Budget di">${budScopes().map(p=>`<button data-act="bud-sc" data-p="${h(p)}" aria-pressed="${p===sc}">${h(p)}</button>`).join("")}</div>`;
+  const seg=`<div class="seg pages" style="grid-template-columns:repeat(${budScopesWk().length},1fr)" role="group" aria-label="Budget di">${budScopesWk().map(p=>`<button data-act="bud-sc" data-p="${h(p)}" aria-pressed="${p===sc}">${h(p)}</button>`).join("")}</div>`;
   const head=`<div class="btns" style="margin:4px 0 0;justify-content:space-between;align-items:center"><button class="link" data-nav="bud">‹ Torna al budget</button><button class="btn ghost" data-act="q-new" style="padding:8px 14px">+ Spesa al volo</button></div>${seg}<div class="calhead"><button class="iconbtn" data-act="wk-m" data-d="-1" aria-label="Mese precedente">‹</button><b>${h(MESI_L[mi]+" "+y)}</b><button class="iconbtn" data-act="wk-m" data-d="1" aria-label="Mese successivo">›</button></div>`;
   if(!D)return head+`<section class="empty" style="padding-top:8px"><h1>Serve prima il budget.</h1><p>Il mese parte dalle spese previste nel budget ${sc===BFAM?"della famiglia":"di "+h(sc)}.</p><div class="btns"><button class="btn" data-nav="bud">Vai al budget</button></div></section>`;
   const fxp=fixAllOn()&&!D.noB?wkFixEff(D):0;
@@ -2318,13 +2368,13 @@ function catBudNote(BB){return BB._ys&&BB._ys.length?`<p class="hint" style="pad
 function budRowForm(id){
   const y=budYear(),sc=budScope(),r=id?budRows(y,sc).find(x=>x.id===id):{t:"",k:"out",s:"cat",c:"altro",m:Array(12).fill(0)};if(!r)return;
   S.sheet={budRow:id||"new"};
-  if(r.link){openSheet(`<h3>${h(r.t)}</h3><div class="sub">Collegata al budget di ${h(r.link)}: è il «Versamento al conto di casa» previsto lì, mese per mese. Per cambiarla modifica quella voce, qui si aggiorna da sola.</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="bud-sc" data-p="${h(r.link)}" style="flex:1">Vai al budget di ${h(r.link)}</button><button class="btn ghost" data-act="close">Chiudi</button></div>`);return}
+  if(r.link){openSheet(`<h3>${h(r.t)}</h3><div class="sub">Collegata al budget di ${h(r.link)}: è ${sc===BRIS?"l'«Obiettivo di risparmio»":"il «Versamento al conto di casa»"} previsto lì, mese per mese. Per cambiarla modifica quella voce, qui si aggiorna da sola.</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div><div class="btns"><button class="btn" data-act="bud-sc" data-p="${h(r.link)}" style="flex:1">Vai al budget di ${h(r.link)}</button><button class="btn ghost" data-act="close">Chiudi</button></div>`);return}
   const opt=(v,l,sel)=>`<option value="${h(v)}"${v===sel?" selected":""}>${h(l)}</option>`;
   if(!budCanEdit(sc)){openSheet(`<h3>${h(r.t)}</h3><div class="sub">${BGRP[grpOf(r)]} · totale ${eur(sumArr(r.m))}</div><div class="budgrid">${r.m.map((v,i)=>`<div><span>${MESI[i]}</span><b class="num">${eur(v)}</b></div>`).join("")}</div>${r.note?`<p class="bnote">${h(r.note)}</p>`:""}<div class="btns"><button class="btn" data-act="close" style="flex:1">Chiudi</button></div>`);return}
   const sk=rowSec(r);
   openSheet(`<h3>${id?"Modifica voce":"Nuova voce"}</h3>
     <div class="field"><label for="bt">Voce</label><input id="bt" value="${h(r.t)}" placeholder="Vacanze estive" autocomplete="off"></div>
-    <div class="two"><div class="field" style="margin-top:0"><label for="bk">Sezione</label><select id="bk">${opt("in","Entrata",sk)}${opt("cat","Spesa per categoria",sk)}${opt("dl","Scadenza",sk)}${opt("extra","Straordinaria / contanti",sk)}${sc!==BFAM?opt("casa","Versamento al conto di casa",sk):""}${opt("sav","Obiettivo di risparmio",sk)}</select></div>
+    <div class="two"><div class="field" style="margin-top:0"><label for="bk">Sezione</label><select id="bk">${opt("in","Entrata",sk)}${opt("cat","Spesa per categoria",sk)}${opt("dl","Scadenza",sk)}${opt("extra","Straordinaria / contanti",sk)}${sc!==BFAM&&sc!==BRIS?opt("casa","Versamento al conto di casa",sk):""}${sc!==BRIS?opt("sav","Obiettivo di risparmio",sk):""}</select></div>
       <div class="field" style="margin-top:0"><label for="bc">Categoria</label><select id="bc">${CATS.map(([k,n])=>opt(k,n,r.c||"altro")).join("")}</select></div></div>
     <div class="field" style="margin-top:0"><label for="bfx">Tipo di spesa</label><select id="bfx">${opt("fissa","Fissa: arriva comunque",fxOf(r))}${opt("variabile","Variabile: si può governare",fxOf(r))}</select><p class="hint">Conta solo per le spese; per entrate e risparmio non serve.</p></div>
     <div class="field"><span class="lab">Importi per mese</span>
@@ -2362,7 +2412,7 @@ async function budSaveRow(){
 }
 async function budWrite(y,sc,patch,msg){
   const key=budId(y,sc),cur=budDoc(y,sc),rows={...(cur.rows||{})};for(const [k,v] of Object.entries(patch.rows||{}))if(v===null)delete rows[k];else rows[k]=v;
-  const fr={...(patch.from!=null?{from:patch.from}:{}),...(patch.note!=null?{note:patch.note}:{})};
+  const fr={...(patch.from!=null?{from:patch.from}:{}),...(patch.note!=null?{note:patch.note}:{}),...(patch.start!=null?{start:patch.start}:{})};
   S.bud={...(S.bud||{}),[key]:{...cur,y,sc,rows,...fr}};closeSheet();render();if(msg)toast(msg);
   const fsRows={};for(const [k,v] of Object.entries(patch.rows||{}))fsRows[k]=v===null?deleteField():v;
   // attenzione: con merge una mappa vuota sostituisce il campo intero, quindi "rows" si manda solo se ci sono voci da cambiare
@@ -2377,6 +2427,7 @@ async function budDoPart(){
   await budWrite(y,sc,{rows,from},`Budget ${y} da ${MESI_L[from].toLowerCase()}: voci copiate dal ${src}, correggile se serve`);
 }
 async function budDoPropose(){
+  if(budScope()===BRIS){if(!budRowsRaw(budYear(),BRIS).length)risCreate();return}
   const y=budYear(),sc=budScope(),P=budPropose(y,sc);if(!P){toast("Servono movimenti importati per fare la proposta.");return}
   const had=budRowsRaw(y,sc).length;if(had&&!confirm("Rifare la proposta? Le voci attuali di questo budget vengono sostituite."))return;
   const del={};for(const r of budRowsRaw(y,sc))del[r.id]=null;
@@ -3508,6 +3559,8 @@ document.addEventListener("click",async e=>{
   else if(act==="bud-propose") budDoPropose();
   else if(act==="bud-part") budDoPart();
   else if(act==="bud-restore") budRestore();
+  else if(act==="bud-ris") risCreate();
+  else if(act==="bud-start"){const v=num(($("#bstart")||{}).value||"");if(isNaN(v)){toast("Scrivi un importo.");return}budWrite(budYear(),BRIS,{start:Math.round(v*100)/100},"Saldo di partenza salvato")}
   else if(act==="bud-note"){const v=($("#budnote")||{}).value;if(v==null)return;budWrite(budYear(),budScope(),{note:v.trim()},"Note salvate")}
   else if(act==="bud-xlsx") budXlsx();
   else if(act==="go-imp"){closeSheet();S.view="imp";render();window.scrollTo(0,0)}
