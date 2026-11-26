@@ -518,7 +518,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "83 · 24/11/2026";
+const APP_VERSION = "84 · 26/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -3013,23 +3013,25 @@ function vMovs(){
   if(q) list=list.filter(t=>norm(t.m+" "+t.x+" "+(t.n||"")).includes(q));
   if(f.c) list=list.filter(t=>t.k==="spesa"&&(t.c||"altro")===f.c);
   if(f.p) list=list.filter(t=>t.p===f.p);
+  if(f.k) list=list.filter(t=>(t.k||"spesa")===f.k);
   if(f.s) list=list.filter(t=>srcName(t)===f.s);
   if(f.pb) list=list.filter(t=>t.pb===f.pb);
   if(f.ty) list=list.filter(t=>t.k==="spesa"&&spType(t)===f.ty);
   const ms=S.msort||"data",byVal=ms==="importo";
   if(byVal) list=[...list].sort((x,y)=>((x.k==="spesa"?0:1)-(y.k==="spesa"?0:1))||Math.abs(y.a)-Math.abs(x.a)||y.d.localeCompare(x.d));
   if(ms==="nome") list=[...list].sort((x,y)=>String(x.m).localeCompare(String(y.m),"it")||y.d.localeCompare(x.d));
-  const spent=-sum(list.filter(t=>t.k==="spesa"));
+  const spent=-sum(list.filter(t=>t.k==="spesa")),inc=sum(list.filter(t=>t.k==="entrata"));
   let html=`${pageSeg()}<div class="filters">
     <input type="search" id="fq" placeholder="Cerca esercente o descrizione" value="${h(f.q)}" aria-label="Cerca">
+    <select id="fk" aria-label="Tipo di movimento"><option value="">Tutti i movimenti</option>${[["spesa","Solo spese"],["entrata","Solo entrate"],["giroconto","Solo giroconti e addebiti carta"],["prelievo","Solo prelievi"]].map(([k,n])=>`<option value="${k}" ${f.k===k?"selected":""}>${h(n)}</option>`).join("")}</select>
     <select id="fc" aria-label="Categoria"><option value="">Tutte le categorie</option>${CATS.map(([id,n])=>`<option value="${id}" ${f.c===id?"selected":""}>${h(n)}</option>`).join("")}</select>
     <select id="fp" aria-label="Beneficiario"><option value="">Ogni beneficiario</option>${members().map(m=>`<option ${f.p===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="fpb" aria-label="Sostenuta da"><option value="">Chiunque abbia pagato</option>${payerOpts().map(m=>`<option ${f.pb===m?"selected":""}>${h(m)}</option>`).join("")}</select>
     <select id="fty" aria-label="Tipo di spesa"><option value="">Ogni tipo di spesa</option>${Object.entries(TIPI).map(([k,n])=>`<option value="${k}" ${f.ty===k?"selected":""}>${h(n)}</option>`).join("")}</select>
     <select id="fs" aria-label="Mezzo"><option value="">Ogni mezzo</option>${(()=>{const ok=new Set(S.all.filter(inPage).map(srcName));return sources().filter(m=>ok.has(m)||m===f.s)})().map(m=>`<option ${f.s===m?"selected":""}>${h(m)}</option>`).join("")}</select>
   </div>
-  <div class="toolbar"><div class="seg sm four" role="group" aria-label="Ordina per">${[["data","Data"],["importo","Importo"],["nome","Nome"],["esercente","Esercente"]].map(([k,n])=>`<button data-act="msort" data-s="${k}" aria-pressed="${ms===k}">${n}</button>`).join("")}</div><span class="hint num" style="margin:0">${list.length} movimenti${q?" in tutti i mesi":""} · spese ${eur(spent)}</span></div>`;
-  if(!list.length) return html+`<p class="hint" style="margin-top:20px">Nessun movimento con questi filtri.${(f.c||f.p||f.s||f.q||f.pb||f.ty)?` <button class="link" data-act="clearf">Togli i filtri</button>`:""}</p>`;
+  <div class="toolbar"><div class="seg sm four" role="group" aria-label="Ordina per">${[["data","Data"],["importo","Importo"],["nome","Nome"],["esercente","Esercente"]].map(([k,n])=>`<button data-act="msort" data-s="${k}" aria-pressed="${ms===k}">${n}</button>`).join("")}</div><span class="hint num" style="margin:0">${list.length} movimenti${q?" in tutti i mesi":""}${f.k==="entrata"?` · entrate ${eur(inc)}`:f.k&&f.k!=="spesa"?"":` · spese ${eur(spent)}`}</span></div>`;
+  if(!list.length) return html+`<p class="hint" style="margin-top:20px">Nessun movimento con questi filtri.${(f.c||f.p||f.s||f.q||f.pb||f.ty||f.k)?` <button class="link" data-act="clearf">Togli i filtri</button>`:""}</p>`;
   let cur="";
   if(byVal||ms==="nome") return html+list.map(t=>txRow(t,true)).join("");
   if(ms==="esercente") return html+vGroups(list);
@@ -3707,6 +3709,7 @@ document.addEventListener("change",async e=>{
   if(id==="fs"){S.f.s=t.value;t.blur();render();return}
   if(id==="fpb"){S.f.pb=t.value;t.blur();render();return}
   if(id==="fty"){S.f.ty=t.value;t.blur();render();return}
+  if(id==="fk"){S.f.k=t.value;if(t.value&&t.value!=="spesa"){S.f.c="";S.f.ty=""}t.blur();render();return}
   if(id==="hfp"||id==="hfpb"||id==="hfc"){S.hf[id.slice(2)]=t.value;t.blur();render();return}
   if(t.dataset.cr){
     const id2=t.dataset.cr,c=conti()[id2];if(!c)return;const v={...c,ruolo:t.value};
