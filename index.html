@@ -520,7 +520,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "88 · 26/11/2026";
+const APP_VERSION = "89 · 26/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -1990,24 +1990,37 @@ function budRows(y,sc){const rows=budRowsRaw(y,sc);if(sc===BRIS)return risRows(y
   return rows}
 // ---------- Budget del risparmio: entra l'obiettivo di risparmio degli altri budget, escono vacanze e straordinarie ----------
 function risRows(y,rows){if(!rows.length)return rows;
-  for(const p of [...payers(),BFAM]){const m=Array(12).fill(0);for(const r of budRows(y,p))if(r.k==="sav")r.m.forEach((v,i)=>m[i]+=v);if(!sumArr(m))continue;
-    rows.push({id:"in-sav-"+hash(p),t:p===BFAM?"Dal conto di casa":"Da "+p,k:"in",src:"in:sav:"+p,m,link:p})}
+  // i risparmi per i figli restano a parte: si vedono ma non entrano nel fondo da spendere
+  const km={},kl={};
+  for(const p of [...payers(),BFAM]){const m=Array(12).fill(0);
+    for(const r of budRows(y,p)){if(r.k!=="sav")continue;const kid=kidOfRow(r);
+      if(kid){const a=km[kid]||(km[kid]=Array(12).fill(0));r.m.forEach((v,i)=>a[i]+=v);kl[kid]=kl[kid]||p}else r.m.forEach((v,i)=>m[i]+=v)}
+    if(sumArr(m))rows.push({id:"in-sav-"+hash(p),t:p===BFAM?"Dal conto di casa":"Da "+p,k:"in",src:"in:sav:"+p,m,link:p})}
+  for(const kid of kids())rows.push({id:"kid-"+hash(kid),t:"Per "+kid,k:"in",kid,m:km[kid]||Array(12).fill(0),link:kl[kid]||BFAM});
   return rows}
+function kidOfRow(r){return kids().find(k=>r.id==="s-"+hash(k)||norm(r.t||"").includes(norm(k)))||null}
+// quota dei figli nei risparmi a fine mese i dell'anno y: quota impostata in Impostazioni più i versamenti previsti dopo quella data
+function kidPart(y,i,kidRows){let s=0;
+  for(const r of kidRows){const q=quote()[r.kid];if(!q||!q.v)continue;s+=+q.v;
+    for(let j=0;j<=i;j++){const me=y+"-"+String(j+1).padStart(2,"0")+"-28";if(me>(q.d||""))s+=r.m[j]}}
+  return s}
+function kidQuoteTot(){return kids().reduce((x,k)=>x+(+(quote()[k]||{}).v||0),0)}
 // saldo di tutti i risparmi (conti patrimonio, vincoli, linea libera) a una data; null se manca qualche saldo
 function savTotAt(d){let s=0,ok=false;
   for(const [k,v] of contoList()){if(v.t==="carta")continue;
     if(ruolo(k)==="patrimonio"){const b=balAt(k,d);if(b==null)return null;s+=b;ok=true}
     else{if(v.vinc){s+=vincAt(k,d);ok=true}if(v.lib){s+=libAt(k,d);ok=true}}}
   return ok?s:null}
-function risStartAuto(y){const d=(y-1)+"-12-31";return d<today()?{v:savTotAt(d),l:"saldo dei risparmi al 31/12/"+(y-1)}:{v:savTotAt(today()),l:"saldo dei risparmi di oggi"}}
+function risStartAuto(y){const d=(y-1)+"-12-31",k=kidQuoteTot(),kn=k?` meno le quote di ${kids().join(" e ")}`:"",f=v=>v==null?null:v-k;
+  return d<today()?{v:f(savTotAt(d)),l:"saldo dei risparmi al 31/12/"+(y-1)+kn}:{v:f(savTotAt(today())),l:"saldo dei risparmi di oggi"+kn}}
 function risStart(y){const v=budDoc(y,BRIS).start;return v!=null?{v:+v,l:"impostato da te"}:risStartAuto(y)}
 async function risCreate(){const y=budYear(),z=Array(12).fill(0);
   await budWrite(y,BRIS,{rows:{"r-viaggi":{t:"Viaggi e vacanze",k:"out",s:"cat",c:"viaggi",fx:"variabile",m:z},"r-stra":{t:"Spese straordinarie",k:"out",s:"extra",fx:"variabile",m:z}}},`Budget del risparmio ${y} creato: metti gli importi nelle uscite`)}
 function vBudRis(y,rows,ed,head,chips){
   const sel=S.budM===""||S.budM==null?null:+S.budM,val=r=>sel==null?sumArr(r.m):r.m[sel],st=risStart(y),s0=st.v||0;
-  const ins=rows.filter(r=>r.k==="in"),outs=rows.filter(r=>r.k!=="in"),mi=i=>sumArr(ins.map(r=>r.m[i]))-sumArr(outs.map(r=>r.m[i]));
+  const kr=rows.filter(r=>r.kid),ins=rows.filter(r=>r.k==="in"&&!r.kid),outs=rows.filter(r=>r.k!=="in"),mi=i=>sumArr(ins.map(r=>r.m[i]))-sumArr(outs.map(r=>r.m[i]));
   const fondo=[];let f=s0;for(let i=0;i<12;i++){f+=mi(i);fondo.push(f)}
-  const real=MESI.map((_,i)=>{const d=y+"-"+String(i+1).padStart(2,"0")+"-"+String(new Date(y,i+1,0).getDate()).padStart(2,"0");if(d>today()&&(y+"-"+String(i+1).padStart(2,"0"))!==ymOf(today()))return null;return savTotAt(d<today()?d:today())});
+  const real=MESI.map((_,i)=>{const d=y+"-"+String(i+1).padStart(2,"0")+"-"+String(new Date(y,i+1,0).getDate()).padStart(2,"0");if(d>today()&&(y+"-"+String(i+1).padStart(2,"0"))!==ymOf(today()))return null;const t=savTotAt(d<today()?d:today());return t==null?null:t-kidPart(y,i,kr)});
   const mx=Math.max(1,...fondo.map(Math.abs),...real.filter(v=>v!=null).map(Math.abs));
   const I=ins.reduce((x,r)=>x+val(r),0),O=outs.reduce((x,r)=>x+val(r),0),fEnd=sel==null?fondo[11]:fondo[sel],fBeg=sel==null||sel===0?s0:fondo[sel-1];
   const bars=`<div class="budbars">${fondo.map((v,i)=>`<button data-act="bud-m" data-m="${i}" class="${sel===i?"on":""}" aria-label="${MESI[i]}: fondo previsto ${eur(v)}${real[i]!=null?", reale "+eur(real[i]):""}"><span class="bb"><i class="${v<0?"neg":""}" style="height:${Math.round(Math.abs(v)/mx*100)}%"></i></span><small>${MESI[i][0]}</small></button>`).join("")}</div>`;
@@ -2021,14 +2034,17 @@ function vBudRis(y,rows,ed,head,chips){
       <div class="bs"><span>+ Versamenti previsti ${per}</span><b class="num">${E0(I)}</b></div>
       <div class="bs m"><span>− Uscite previste ${per}</span><b class="num">${E0(O)}</b></div>
       <div class="bs tot"><span>= Fondo previsto a fine ${sel==null?"anno":MESI_L[sel].toLowerCase()}</span><b class="num" style="color:${fEnd<0?"var(--danger)":"var(--ok)"}">${E0(fEnd)}</b></div>
-      ${sel!=null&&real[sel]!=null?`<div class="bs"><span>Saldo reale dei risparmi${sel===+today().slice(5,7)-1&&y===+today().slice(0,4)?" oggi":" a fine mese"}</span><b class="num">${E0(real[sel])}</b></div>`:""}
+      ${sel!=null&&real[sel]!=null?`<div class="bs"><span>Saldo reale${kr.length?" (senza "+h(kids().join(" e "))+")":""}${sel===+today().slice(5,7)-1&&y===+today().slice(0,4)?" oggi":" a fine mese"}</span><b class="num">${E0(real[sel])}</b></div>`:""}
       <div style="height:8px"></div>
     </section>
-    <section class="block"><h2>Fondo mese per mese</h2>${bars}<p class="hint" style="padding-bottom:8px">Quanto resta nei risparmi a fine mese: saldo di partenza più i versamenti, meno le uscite previste. In rosso i mesi in cui non bastano.${real.some(v=>v!=null)?" Tocca un mese per vedere anche il saldo reale.":""}</p></section>
-    <section class="block"><h2>Saldo di partenza</h2>
+    <section class="block"><h2>Fondo mese per mese</h2>${bars}<p class="hint" style="padding-bottom:8px">Quanto resta nei risparmi a fine mese${kr.length?", senza la parte di "+h(kids().join(" e ")):""}: saldo di partenza più i versamenti, meno le uscite previste. In rosso i mesi in cui non bastano.${real.some(v=>v!=null)?" Tocca un mese per vedere anche il saldo reale.":""}</p></section>
+    <section class="block"><h2>Saldo di partenza${kr.length?" (senza "+h(kids().join(" e "))+")":""}</h2>
       ${ed?`<div class="two" style="margin:4px 0 6px"><input id="bstart" inputmode="decimal" value="${st.v!=null?fmtNum(Math.round(st.v)):""}" placeholder="0"><button class="btn ghost" data-act="bud-start">Salva</button></div>`:`<p class="num" style="margin:4px 0">${eur(s0)}</p>`}
       <p class="hint" style="padding-bottom:8px">${st.v==null?"Manca il saldo di qualche conto di risparmio: scrivilo tu.":st.l==="impostato da te"?`Impostato da te. Saldo calcolato dai conti: ${(()=>{const a=risStartAuto(y);return a.v==null?"non disponibile":eur(a.v)+" ("+a.l+")"})()}.`:`Calcolato: ${st.l} (conti di risparmio, vincoli e linea libera). Si aggiorna da solo finché non scrivi tu un importo.`}</p></section>
     <section class="block"><h2 style="display:flex;justify-content:space-between">Versamenti<span class="num">${eur(I)}</span></h2><p class="hint" style="margin-top:-2px">Arrivano da soli dall'«Obiettivo di risparmio» degli altri budget: per cambiarli modifica quelle voci.</p>${ins.map(row).join("")||`<p class="hint">Nessun obiettivo di risparmio negli altri budget del ${y}.</p>`}<div style="height:4px"></div></section>
+    ${kr.length?`<section class="block"><h2>Per ${h(kids().join(" e "))}</h2><p class="hint" style="margin-top:-2px">Risparmi dei figli: restano a parte, non entrano nel fondo e non si spendono. Crescono solo con i versamenti previsti per loro (voci «Per …» negli altri budget).</p>
+      ${kr.map(r=>{const q=quote()[r.kid]||{},vy=sumArr(r.m),fine=q.v?kidPart(y,11,[r]):null;
+        return `<div class="row" style="cursor:default"><i class="dot" style="background:#378ADD"></i><span style="min-width:0"><span class="dlt">${h(r.kid)}</span><span class="hint" style="display:block;margin:0">${q.v?`Quota ${eur(+q.v)} al ${ddmm(q.d)}`:"Quota da impostare in Impostazioni → Patrimonio"} · versamenti ${y}: ${eur(vy)}${fine!=null?` · a fine ${y} circa ${eur(fine)}`:""}</span></span><span class="amt num">${eur(val(r))}</span></div>`}).join("")}<div style="height:4px"></div></section>`:""}
     <section class="block"><h2 style="display:flex;justify-content:space-between">Uscite dai risparmi<span class="num">${eur(O)}</span></h2><p class="hint" style="margin-top:-2px">Vacanze, spese straordinarie, acquisti grossi: mettile nel mese in cui pensi di pagarle.</p>${outs.sort((a,b)=>sumArr(b.m)-sumArr(a.m)).map(row).join("")}<div style="height:4px"></div></section>`}
 function rowAct(act,r,rows){
   if(r.src==="in:other"&&rows){const own=new Set(rows.map(x=>x.src));const a=Array(12).fill(0);let any=false;for(const [k,v] of Object.entries(act))if(k.startsWith("in:")&&!k.startsWith("in:vers:")&&k!=="in:casa"&&!own.has(k)){any=true;v.forEach((x,i)=>a[i]+=x)}return any?a:null}
@@ -2435,13 +2451,13 @@ async function budDoPropose(){
 }
 function budXlsx(){
   if(!window.XLSX){toast("Excel non disponibile senza rete la prima volta.");return}
-  const y=budYear(),sc=budScope(),rows=budRows(y,sc),act=budActual(y,sc),done=budMonthsDone(y);
+  const y=budYear(),sc=budScope(),rows=budRows(y,sc).filter(r=>!r.kid),act=budActual(y,sc),done=budMonthsDone(y);
   const aoa=[["Budget "+y+" · "+sc],[],["Voce","Gruppo","Categoria",...MESI,"Totale","Note"]],T={};
   for(const k of ["in","fix","sav","var"]){const l=rows.filter(r=>grpOf(r)===k);
     for(const r of l)aoa.push([r.t,BGRP[k],r.c?(CAT[r.c]||CAT.altro).n:"",...r.m,sumArr(r.m),r.note||""]);
     const t=MESI.map((_,i)=>l.reduce((x,r)=>x+r.m[i],0));T[k]=t;aoa.push(["Totale "+BGRP[k].toLowerCase(),"","",...t,sumArr(t)]);aoa.push([])}
   const disp=MESI.map((_,i)=>T.in[i]-T.fix[i]-T.sav[i]),mg=MESI.map((_,i)=>disp[i]-T.var[i]);
-  aoa.push(["Disponibile per le variabili","","",...disp,sumArr(disp)]);aoa.push(["Margine (dopo le variabili previste)","","",...mg,sumArr(mg)]);const bn=budDoc(y,sc).note;if(bn){aoa.push([]);aoa.push(["Note",bn])}
+  aoa.push(["Disponibile per le variabili","","",...disp,sumArr(disp)]);aoa.push(["Margine (dopo le variabili previste)","","",...mg,sumArr(mg)]);if(sc===BRIS)for(const r of budRows(y,sc).filter(r=>r.kid))aoa.push([r.t+" (a parte, non nel fondo)","Figli","",...r.m,sumArr(r.m)]);const bn=budDoc(y,sc).note;if(bn){aoa.push([]);aoa.push(["Note",bn])}
   const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:34},{wch:22},{wch:22},...MESI.map(()=>({wch:10})),{wch:12},{wch:50}];
   XLSX.utils.book_append_sheet(wb,ws,"Budget "+y);
   if(done){const a2=[["Consuntivo "+y+" · "+sc+" (mesi importati)"],[],["Voce",...MESI.slice(0,done),"Totale reale","Budget stessi mesi","Differenza"]];
