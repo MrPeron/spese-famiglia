@@ -518,7 +518,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "84 · 26/11/2026";
+const APP_VERSION = "85 · 26/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -2863,27 +2863,28 @@ function refNear(s,A){const d=A-s;return d>0.004&&d<=Math.max(5,s*0.1)}
 // Spese candidate per un rimborso: stesso importo in cima, poi arrotondato per eccesso, poi le più vicine; anche spese registrate fino a 60 giorni dopo il rimborso
 function refundCands(r,q){
   const A=Math.abs(r.a),health=/(assistenza|sanitari|unisalute|previmedical|caspie|fasi|medic)/.test(norm((r.x||"")+" "+(r.m||""))),qq=norm(q||"");
-  return S.all.filter(e=>e.k==="spesa"&&e.a<0&&e.d<=shiftDay(r.d,60)&&dayDiff(e.d,r.d)<=365&&(!qq||norm(e.m+" "+e.x).includes(qq)))
-    .map(e=>{const d=dayDiff(e.d,r.d);let sc=(365-d)/365*20;if(e.d>r.d)sc-=5;if(Math.abs(-e.a-A)<0.01)sc+=100;else if(refNear(-e.a,A))sc+=70-(A+e.a);else if(-e.a>A&&health&&e.c==="salute")sc+=40;else if(health&&e.c==="salute")sc+=15;return {e,sc}})
+  // conto su conto: senza ricerca solo le spese dello stesso conto del rimborso; cercando, tutti i conti (lo stesso conto in cima)
+  return S.all.filter(e=>e.k==="spesa"&&e.a<0&&e.d<=shiftDay(r.d,60)&&dayDiff(e.d,r.d)<=365&&(qq?norm(e.m+" "+e.x).includes(qq):(!r.acc||e.acc===r.acc)))
+    .map(e=>{const d=dayDiff(e.d,r.d);let sc=(365-d)/365*20;if(r.acc&&e.acc===r.acc)sc+=200;if(e.d>r.d)sc-=5;if(Math.abs(-e.a-A)<0.01)sc+=100;else if(refNear(-e.a,A))sc+=70-(A+e.a);else if(-e.a>A&&health&&e.c==="salute")sc+=40;else if(health&&e.c==="salute")sc+=15;return {e,sc}})
     .sort((x,y)=>y.sc-x.sc).slice(0,qq?40:15).map(x=>x.e);
 }
 function openRefund(id){
   const r=S.byId[id];if(!r)return;S.sheet={type:"refund",id};
-  openSheet(`<h3>Rimborso di quale spesa?</h3><div class="sub">${h(r.m||"")} · +${eur(Math.abs(r.a))} il ${ddmm(r.d)}. Scegli una o più spese: il rimborso finisce nella loro categoria e a costo resta solo il netto.</div>
+  openSheet(`<h3>Rimborso di quale spesa?</h3><div class="sub">${h(r.m||"")} · +${eur(Math.abs(r.a))} il ${ddmm(r.d)}. Scegli una o più spese: il rimborso finisce nella loro categoria e a costo resta solo il netto.${r.acc&&conti()[r.acc]?` Qui sotto le spese di ${h(conti()[r.acc].n)}; cercando, anche quelle degli altri conti.`:""}</div>
     <div class="field"><input type="search" id="rq" placeholder="Cerca la spesa" aria-label="Cerca la spesa rimborsata"></div>
     <div id="rlist">${refundList(r,"")}</div>
     <div class="btns"><button class="btn" data-act="dorefund" style="flex:1" ${S.canWrite?"":"disabled"}>Abbina</button><button class="btn ghost" data-act="close">Annulla</button></div>`);
 }
 function refundList(r,q){
   const list=refundCands(r,q);
-  if(!list.length) return `<p class="hint">Nessuna spesa trovata nell’anno prima del rimborso.</p>`;
+  if(!list.length) return `<p class="hint">${q?"Nessuna spesa trovata con questa ricerca.":"Nessuna spesa di questo conto vicina al rimborso: cerca per nome per vedere gli altri conti."}</p>`;
   return `<div class="rules">${list.map(e=>`<label class="check" style="margin:0;padding:8px 12px;border-top:1px solid var(--line)"><input type="checkbox" data-rc="${h(e.id)}"><span style="flex:1;min-width:0"><b>${h(e.m)}</b> · ${ddmm(e.d)} · ${eur(-e.a)}<br><span class="hint" style="margin:0">${catDot(e.c)} ${h((CAT[e.c]||CAT.altro).n)} · ${h(srcName(e))}${Math.abs(-e.a-Math.abs(r.a))<0.01?" · stesso importo":refNear(-e.a,Math.abs(r.a))?" · rimborso arrotondato":""}${e.d>r.d?" · registrata dopo":""}</span></span></label>`).join("")}</div>`;
 }
 // Entrate del periodo che sembrano rimborsi (da assicurazioni, fondi, resi, o con lo stesso importo di una spesa recente)
 function refundSugg(tx){
   return tx.filter(t=>t.k==="entrata"&&!isPatr(t)&&!t.nr&&!isRefund(t)).filter(t=>{
     if(RE_RIMB.test(norm((t.x||"")+" "+(t.m||""))))return true;
-    const A=Math.abs(t.a);return S.all.some(e=>e.k==="spesa"&&e.a<0&&(Math.abs(-e.a-A)<0.01||(A<=1500&&refNear(-e.a,A)&&dayDiff(e.d,t.d)<=45))&&e.d<=shiftDay(t.d,30)&&dayDiff(e.d,t.d)<=120);
+    const A=Math.abs(t.a);return S.all.some(e=>e.k==="spesa"&&e.a<0&&(!t.acc||e.acc===t.acc)&&(Math.abs(-e.a-A)<0.01||(A<=1500&&refNear(-e.a,A)&&dayDiff(e.d,t.d)<=45))&&e.d<=shiftDay(t.d,30)&&dayDiff(e.d,t.d)<=120);
   }).slice(0,8);
 }
 function vRefunds(tx){
