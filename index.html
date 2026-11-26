@@ -520,7 +520,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 (() => {
 "use strict";
 // Versione dell'app: si aggiorna a ogni pubblicazione; l'app la confronta con quella online
-const APP_VERSION = "86 · 26/11/2026";
+const APP_VERSION = "87 · 26/11/2026";
 const CASH = "Contanti";
 const BASE_CATS = [
   ["spesa","Spesa alimentare","#3E8E5A"],["ristoranti","Ristoranti e bar","#D9822B"],
@@ -879,7 +879,7 @@ async function loadFixes(yms){
 function fixFor(k){const m=S.fixes[keyYm(k)];return m&&m[k]}
 // copia di sicurezza: tutti i movimenti e tutte le correzioni, in un file sul dispositivo
 async function backupAll(){const fx={};try{const snap=await getDocs(collection(S.db,"fixes"));snap.docs.forEach(d=>{fx[d.id]=(d.data()&&d.data().f)||{}})}catch(e){}
-  const data={app:"Casa Peron",v:APP_VERSION,date:new Date().toISOString(),months:S.months,fixes:fx};
+  const data={app:"Casa Peron",v:APP_VERSION,date:new Date().toISOString(),months:S.months,fixes:fx,budget:S.bud||{}};
   const name="casa-peron-copia-"+today()+".json",blob=new Blob([JSON.stringify(data)],{type:"application/json"});
   // sul telefono (app sulla schermata Home) il download diretto non sempre funziona: si usa Condividi → Salva su File
   try{const file=new File([blob],name,{type:"application/json"});if(navigator.canShare&&navigator.canShare({files:[file]})&&/iphone|ipad|android/i.test(navigator.userAgent)){await navigator.share({files:[file],title:name});return fx}}catch(e){if(e&&e.name==="AbortError")throw new Error("Copia non salvata: riprova e scegli «Salva su File».")}
@@ -1973,6 +1973,12 @@ function budScope(){const l=budScopes();return l.includes(S.budScope)?S.budScope
 function budCanEdit(sc){return isAdmin()||sc===meName()}
 function budId(y,sc){return (y||budYear())+"-"+(sc||budScope())}
 function budDoc(y,sc){return (S.bud||{})[budId(y,sc)]||{}}
+// copia di sicurezza sul dispositivo: per ogni budget l'ultima versione con voci (serve a ripristinare se le voci spariscono)
+function budKeepGet(){try{return JSON.parse(localStorage.getItem("bud-keep")||"{}")}catch(e){return {}}}
+function budKeep(m){try{const k=budKeepGet();let ch=false;for(const [id,d] of Object.entries(m)){const n=Object.keys((d&&d.rows)||{}).length;if(n){k[id]={rows:d.rows,at:new Date().toISOString()};ch=true}}if(ch)localStorage.setItem("bud-keep",JSON.stringify(k))}catch(e){}}
+function budKeepFor(y,sc){const c=budKeepGet()[budId(y,sc)];return c&&!Object.keys(budDoc(y,sc).rows||{}).length&&Object.keys(c.rows||{}).length?c:null}
+async function budRestore(){const y=budYear(),sc=budScope(),c=budKeepFor(y,sc);if(!c)return;
+  await budWrite(y,sc,{rows:c.rows},`Ripristinate ${Object.keys(c.rows).length} voci del budget ${y}`)}
 function budFrom(y,sc){return +budDoc(y,sc).from||0}
 function budRowsRaw(y,sc){return Object.entries(budDoc(y,sc).rows||{}).map(([id,r])=>({id,...r,m:(r.m||[]).concat(Array(12).fill(0)).slice(0,12).map(v=>+v||0)}))}
 // nel budget di Famiglia i versamenti di ciascuno sono quelli previsti nel suo budget personale (voce "Versamento al conto di casa")
@@ -2082,7 +2088,8 @@ function vBudget(){
   const seg=`<div class="seg pages" style="grid-template-columns:repeat(${budScopes().length},1fr)" role="group" aria-label="Budget di">${budScopes().map(p=>`<button data-act="bud-sc" data-p="${h(p)}" aria-pressed="${p===sc}">${h(p)}</button>`).join("")}</div>`;
   const head=`${seg}<div class="calhead"><button class="iconbtn" data-act="bud-y" data-d="-1" aria-label="Anno precedente">‹</button><b>Budget ${y}</b><button class="iconbtn" data-act="bud-y" data-d="1" aria-label="Anno successivo">›</button></div>`;
   const what=sc===BFAM?"del conto di casa: versamenti vostri, spese di casa fisse e variabili, quanto mettere da parte":"di "+h(sc)+": stipendio, spese personali (conti e carte), versamento al conto di casa, risparmio";
-  if(!rows.length) return head+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)}.</h1>
+  const kc=ed&&budKeepFor(y,sc);
+  if(!rows.length) return head+(kc?`<section class="block" style="margin-top:12px;padding-bottom:12px"><h2>C'è una copia su questo dispositivo</h2><p class="hint">Questo dispositivo ha conservato ${Object.keys(kc.rows).length} voci del budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)} (viste il ${h(new Date(kc.at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(", "," alle "))}). Puoi rimetterle nel budget.</p><div class="btns" style="margin:8px 0 0"><button class="btn" data-act="bud-restore">Ripristina le voci</button></div></section>`:"")+`<section class="empty" style="padding-top:8px"><h1>Il budget ${y} ${sc===BFAM?"della famiglia":"di "+h(sc)}.</h1>
     <p>Il budget ${what}, mese per mese. ${ed?"La proposta parte dalle medie degli ultimi 12 mesi importati e dalle scadenze del Calendario: poi la correggi voce per voce.":"Lo prepara "+h(S.settings.admin||payers()[0])+"."}</p>
     ${ed?`<div class="btns"><button class="btn" data-act="bud-propose">Crea la proposta</button><button class="btn ghost" data-act="bud-add">Parti da zero</button></div>`:""}
     ${ed&&budPartSrc(y,sc)?`<div class="block" style="margin-top:16px;padding-bottom:12px;text-align:left"><h2>Solo da ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())} a dicembre</h2><p class="hint">Copia le voci del budget ${budPartSrc(y,sc)} con gli importi di ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())}${+today().slice(5,7)<12?"–dicembre":""}: i mesi prima restano senza budget. Poi le correggi voce per voce.</p><div class="btns" style="margin:8px 0 0"><button class="btn" data-act="bud-part">Prepara il budget da ${h(MESI_L[+today().slice(5,7)-1].toLowerCase())}</button></div></div>`:""}</section>`;
@@ -2358,7 +2365,9 @@ async function budWrite(y,sc,patch,msg){
   const fr={...(patch.from!=null?{from:patch.from}:{}),...(patch.note!=null?{note:patch.note}:{})};
   S.bud={...(S.bud||{}),[key]:{...cur,y,sc,rows,...fr}};closeSheet();render();if(msg)toast(msg);
   const fsRows={};for(const [k,v] of Object.entries(patch.rows||{}))fsRows[k]=v===null?deleteField():v;
-  try{await setDoc(doc(S.db,"budget",key),{y,sc,rows:fsRows,...fr,upd:new Date().toISOString(),by:S.uid||""},{merge:true})}catch(err){toast(errMsg(err))}
+  // attenzione: con merge una mappa vuota sostituisce il campo intero, quindi "rows" si manda solo se ci sono voci da cambiare
+  const pay={y,sc,...fr,upd:new Date().toISOString(),by:S.uid||""};if(Object.keys(fsRows).length)pay.rows=fsRows;
+  try{await setDoc(doc(S.db,"budget",key),pay,{merge:true})}catch(err){toast(errMsg(err))}
 }
 // budget dell'anno in corso partito a metà: voci e importi dello stesso mese dal budget più vicino (di solito l'anno dopo)
 function budPartSrc(y,sc){if(y!==+today().slice(0,4)||+today().slice(5,7)===1)return null;const by=wkBudYear(y,sc);return by!=null&&by!==y?by:null}
@@ -3498,6 +3507,7 @@ document.addEventListener("click",async e=>{
   else if(act==="bud-eq"){const v=num($("#btot").value||"");if(isNaN(v)){toast("Scrivi il totale dell'anno.");return}const m=Math.round(v/12*100)/100;for(let i=0;i<12;i++)$("#bm"+i).value=fmtNum(i<11?m:Math.round((v-m*11)*100)/100)}
   else if(act==="bud-propose") budDoPropose();
   else if(act==="bud-part") budDoPart();
+  else if(act==="bud-restore") budRestore();
   else if(act==="bud-note"){const v=($("#budnote")||{}).value;if(v==null)return;budWrite(budYear(),budScope(),{note:v.trim()},"Note salvate")}
   else if(act==="bud-xlsx") budXlsx();
   else if(act==="go-imp"){closeSheet();S.view="imp";render();window.scrollTo(0,0)}
@@ -3803,7 +3813,7 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
     unsubs.push(onSnapshot(collection(S.db,"months"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.months=m;rebuild();if(S.imp)buildRows();render();S.loadedMonths=true;migrateFixes();fixGenius()},denied));
     unsubs.push(onSnapshot(collection(S.db,"items"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.items=m;if(!paintList()&&S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"lists"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.lists=m;if(!paintList()&&S.view==="casa")render()},denied));
-    unsubs.push(onSnapshot(collection(S.db,"budget"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.bud=m;if(S.view==="bud")render()},denied));
+    unsubs.push(onSnapshot(collection(S.db,"budget"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.bud=m;budKeep(m);if(S.view==="bud")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"quick"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.quick=m;S.quickVer=(S.quickVer||0)+1;if(S.view==="casa"||S.view==="wk")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"events"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.evs=m;S.loadedEvs=true;seedEvents();if(S.view==="scad"||S.view==="casa")render()},denied));
     unsubs.push(onSnapshot(collection(S.db,"deadlines"),snap=>{const m={};snap.docs.forEach(d=>{m[d.id]=d.data()});S.dls=m;if(S.view==="scad"||S.view==="casa")render()},denied));
